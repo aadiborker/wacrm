@@ -80,6 +80,12 @@ interface WhatsAppWebhookEntry {
         status: string
         timestamp: string
         recipient_id: string
+        errors?: Array<{
+          code?: number
+          title?: string
+          message?: string
+          error_data?: { details?: string }
+        }>
       }>
     }
     field: string
@@ -329,6 +335,26 @@ function ladderLevel(s: string): number {
   return idx < 0 ? -1 : idx
 }
 
+/** Build a short reason string from Meta's statuses[].errors payload. */
+function formatMetaStatusError(
+  errors:
+    | Array<{
+        code?: number
+        title?: string
+        message?: string
+        error_data?: { details?: string }
+      }>
+    | undefined,
+): string {
+  const first = errors?.[0]
+  if (!first) return 'Failed (no reason from Meta)'
+  const details = first.error_data?.details?.trim()
+  const title = (first.title || first.message || '').trim()
+  const code = first.code != null ? `#${first.code}` : ''
+  const parts = [code, title, details].filter(Boolean)
+  return parts.join(' — ').slice(0, 500) || 'Failed (no reason from Meta)'
+}
+
 /**
  * Can a recipient transition from `current` to `incoming`?
  *   - Along the ladder, only forward moves are allowed.
@@ -354,6 +380,12 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
+  errors?: Array<{
+    code?: number
+    title?: string
+    message?: string
+    error_data?: { details?: string }
+  }>
 }) {
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status. No
@@ -397,6 +429,12 @@ async function handleStatusUpdate(status: {
     if (status.status === 'sent' && !('sent_at' in update)) update.sent_at = tsIso
     if (status.status === 'delivered') update.delivered_at = tsIso
     if (status.status === 'read') update.read_at = tsIso
+    if (status.status === 'failed') {
+      // Meta puts the human-readable reason on statuses[].errors[].
+      // Without this, the broadcast UI shows "Failed" with a blank
+      // Error column (send succeeded at Graph API, failed later).
+      update.error_message = formatMetaStatusError(status.errors)
+    }
 
     const { error: recUpdateErr } = await supabaseAdmin()
       .from('broadcast_recipients')
