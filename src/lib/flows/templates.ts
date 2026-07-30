@@ -302,3 +302,24 @@ export function getFlowTemplate(slug: string): FlowTemplate | null {
 export function listFlowTemplates(): FlowTemplate[] {
   return Object.values(TEMPLATES);
 }
+
+/** Shallow gallery card — used by the list page + /api/flows/templates. */
+export interface FlowTemplateSummary {
+  slug: string;
+  name: string;
+  description: string;
+  icon: FlowTemplate["icon"];
+  trigger_type: FlowTemplate["trigger_type"];
+  node_count: number;
+}
+
+export function listFlowTemplateSummaries(): FlowTemplateSummary[] {
+  return listFlowTemplates().map((t) => ({
+    slug: t.slug,
+    name: t.name,
+    description: t.description,
+    icon: t.icon,
+    trigger_type: t.trigger_type,
+    node_count: t.nodes.length,
+  }));
+}
