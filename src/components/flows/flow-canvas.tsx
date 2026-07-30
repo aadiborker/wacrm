@@ -42,6 +42,7 @@ import {
   Background,
   BackgroundVariant,
   Controls,
+  ControlButton,
   Handle,
   MiniMap,
   Panel,
@@ -57,7 +58,7 @@ import {
   type OnNodeDrag,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Plus, Trash2 } from 'lucide-react';
+import { Maximize2, Minimize2, Plus, Trash2 } from 'lucide-react';
 
 import { useTranslations } from 'next-intl';
 
@@ -107,11 +108,11 @@ interface NodeData extends Record<string, unknown> {
   isFlashed: boolean;
 }
 
-const NODE_WIDTH = 240;
+const NODE_WIDTH = 280;
 // Best-effort default; actual height varies by summary length but
 // dagre needs SOMETHING to compute rank spacing. Underestimating is
 // safer than over (tighter layout that still doesn't overlap).
-const NODE_HEIGHT = 90;
+const NODE_HEIGHT = 110;
 
 // ============================================================
 // Custom node — one card per flow node, styled to match the list
@@ -166,7 +167,7 @@ function FlowNodeCard({ data, selected }: NodeProps) {
         } as React.CSSProperties
       }
       className={cn(
-        'bg-card relative max-w-[260px] min-w-[220px] rounded-xl border px-3.5 py-3 text-left shadow-[0_2px_6px_rgba(0,0,0,0.18)] transition-[box-shadow,border-color]',
+        'bg-card relative max-w-[300px] min-w-[260px] rounded-xl border px-4 py-3.5 text-left shadow-[0_2px_6px_rgba(0,0,0,0.18)] transition-[box-shadow,border-color]',
         selected
           ? 'border-[var(--nc)]'
           : 'border-border hover:border-[var(--nc-ring)]',
@@ -180,44 +181,44 @@ function FlowNodeCard({ data, selected }: NodeProps) {
         <Handle
           type="target"
           position={Position.Left}
-          className="!bg-card !h-2.5 !w-2.5 !border-2 !border-[var(--nc-ring)]"
+          className="!bg-card !h-3 !w-3 !border-2 !border-[var(--nc-ring)]"
         />
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         <NodeIconChip
           type={node.node_type}
-          size={24}
-          iconSize={14}
+          size={28}
+          iconSize={15}
           className="rounded-md"
         />
         <span
-          className="truncate text-[10.5px] font-semibold tracking-wider uppercase"
+          className="truncate text-xs font-semibold tracking-wider uppercase"
           style={{ color: c.text }}
         >
           {t(`nodes.${node.node_type}.label`)}
         </span>
         {isEntry && (
-          <span className="border-border text-muted-foreground ml-auto rounded border px-1.5 py-0.5 text-[8.5px] font-bold tracking-[0.1em] uppercase">
+          <span className="border-border text-muted-foreground ml-auto rounded border px-1.5 py-0.5 text-[10px] font-bold tracking-[0.1em] uppercase">
             {t('badgeEntry')}
           </span>
         )}
       </div>
-      <div className="text-muted-foreground mt-2 truncate font-mono text-[11px]">
+      <div className="text-muted-foreground mt-2.5 truncate font-mono text-xs">
         {node.node_key}
       </div>
       {summary && (
-        <div className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed">
+        <div className="text-muted-foreground mt-1.5 line-clamp-2 text-sm leading-relaxed">
           {summary}
         </div>
       )}
 
       {isMultiSlot && (
-        <div className="border-border mt-2.5 flex flex-col gap-1 border-t pt-2.5">
+        <div className="border-border mt-3 flex flex-col gap-1.5 border-t pt-3">
           {slots.map((slot) => (
             <div
               key={slot.id}
-              className="text-muted-foreground relative flex items-center justify-between gap-2 rounded px-1 py-0.5 text-[11px]"
+              className="text-muted-foreground relative flex items-center justify-between gap-2 rounded px-1 py-1 text-xs"
             >
               <span className="truncate" title={slot.label}>
                 {slot.label}
@@ -233,7 +234,7 @@ function FlowNodeCard({ data, selected }: NodeProps) {
                 // sits flush with the right edge of the card instead
                 // of floating at vertical center. The negative offset
                 // matches the card's px-3 + the handle's own radius.
-                className="!bg-card !relative !top-auto !right-auto !h-2.5 !w-2.5 !translate-x-[14px] !transform-none !border-2"
+                className="!bg-card !relative !top-auto !right-auto !h-3 !w-3 !translate-x-[14px] !transform-none !border-2"
               />
             </div>
           ))}
@@ -246,7 +247,7 @@ function FlowNodeCard({ data, selected }: NodeProps) {
           id={slots[0].id}
           position={Position.Right}
           style={{ borderColor: c.solid }}
-          className="!bg-card !h-2.5 !w-2.5 !border-2"
+          className="!bg-card !h-3 !w-3 !border-2"
         />
       )}
     </div>
@@ -287,6 +288,42 @@ function FlowCanvasInner() {
   const reactFlow = useReactFlow();
   const builderNodes = state.nodes;
   const entryNodeId = state.entry_node_id;
+  const canvasRootRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Keep the control icon in sync when the user hits Esc to leave
+  // fullscreen (browser fires fullscreenchange, not our button).
+  useEffect(() => {
+    const sync = () => {
+      setIsFullscreen(document.fullscreenElement === canvasRootRef.current);
+    };
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    const el = canvasRootRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      await el.requestFullscreen();
+      // Frame the whole flow once the stage fills the screen — makes
+      // screenshots / downloads cleaner.
+      window.setTimeout(() => {
+        void reactFlow.fitView({
+          padding: 0.18,
+          minZoom: 0.45,
+          maxZoom: 1.25,
+          duration: 200,
+        });
+      }, 120);
+    } catch (err) {
+      console.error('Fullscreen failed', err);
+    }
+  }, [reactFlow]);
 
   // Side-panel state — which node's form is open. Canvas-only UI; the
   // list view's analogue is the per-card expanded set in
@@ -489,6 +526,32 @@ function FlowCanvasInner() {
     [builderNodes, updateNodeConfig]
   );
 
+  // After nodes (and optional auto-layout) settle, re-fit so a tall
+  // stage doesn't leave a tiny cluster floating in empty space. The
+  // declarative `fitView` prop alone often runs before the container
+  // has its final height. Only fit once per editor mount (and again
+  // once if dagre positions land) — re-fitting on every Add would
+  // fight the user.
+  const hasFittedRef = useRef(false);
+  const hasFittedLayoutRef = useRef(false);
+  useEffect(() => {
+    if (rfNodes.length === 0) return;
+    const layoutJustLanded =
+      !!autoLayoutPositions && !hasFittedLayoutRef.current;
+    if (hasFittedRef.current && !layoutJustLanded) return;
+    const timer = window.setTimeout(() => {
+      void reactFlow.fitView({
+        padding: 0.22,
+        minZoom: 0.55,
+        maxZoom: 1.1,
+        duration: 180,
+      });
+      hasFittedRef.current = true;
+      if (autoLayoutPositions) hasFittedLayoutRef.current = true;
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [rfNodes.length, autoLayoutPositions, reactFlow]);
+
   // Wrapped mutators that target the currently-selected node — pass to
   // the form so each keystroke goes through the editor context (which
   // flips `dirty` and feeds the validator).
@@ -521,13 +584,16 @@ function FlowCanvasInner() {
 
   return (
     <>
-      <div className="h-full w-full overflow-hidden">
+      <div
+        ref={canvasRootRef}
+        className="h-full w-full overflow-hidden bg-[var(--card-2,var(--background))]"
+      >
         <ReactFlow
           nodes={rfNodes}
           edges={rfEdges}
           nodeTypes={NODE_TYPES}
           fitView
-          fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+          fitViewOptions={{ padding: 0.22, minZoom: 0.55, maxZoom: 1.1 }}
           proOptions={{ hideAttribution: true }}
           onNodesChange={handleNodesChange}
           onNodeDragStop={handleNodeDragStop}
@@ -541,11 +607,10 @@ function FlowCanvasInner() {
           nodesConnectable={true}
           edgesFocusable={true}
           elementsSelectable={true}
-          // Lower default min/max zoom than the lib's defaults; the
-          // tiles already truncate their summary at a reasonable
-          // size, so we don't need to zoom past 1.5x.
-          minZoom={0.2}
-          maxZoom={1.5}
+          // Floor the zoom so a wide stage can't shrink cards into
+          // unreadability; users can still zoom out a bit if needed.
+          minZoom={0.45}
+          maxZoom={1.75}
         >
           {/* Dot grid, matching the design's faint canvas backdrop. */}
           <Background
@@ -557,7 +622,24 @@ function FlowCanvasInner() {
           <Controls
             className="!border-border !bg-card [&_button]:!border-border [&_button]:!bg-card [&_button:hover]:!bg-muted [&_button_svg]:!fill-foreground !overflow-hidden !rounded-xl !border !shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)]"
             showInteractive={false}
-          />
+            showFitView={false}
+          >
+            <ControlButton
+              onClick={() => void toggleFullscreen()}
+              title={
+                isFullscreen ? t('exitFullscreen') : t('enterFullscreen')
+              }
+              aria-label={
+                isFullscreen ? t('exitFullscreen') : t('enterFullscreen')
+              }
+            >
+              {isFullscreen ? (
+                <Minimize2 className="!h-3.5 !w-3.5 !fill-none !stroke-current" />
+              ) : (
+                <Maximize2 className="!h-3.5 !w-3.5 !fill-none !stroke-current" />
+              )}
+            </ControlButton>
+          </Controls>
           <MiniMap
             pannable
             zoomable
@@ -735,7 +817,7 @@ function CanvasAddNodeButton({ t }: { t: ReturnType<typeof useTranslations> }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="bg-primary text-primary-foreground hover:bg-primary-hover inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-medium shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)] transition-colors"
+        className="bg-primary text-primary-foreground hover:bg-primary-hover inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)] transition-colors"
         aria-label={t('addNode')}
       >
         <Plus className="h-4 w-4" />

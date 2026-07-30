@@ -155,7 +155,7 @@ export function FlowBuilder() {
   }, [flashKey]);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-7">
+    <div className="mx-auto flex max-w-4xl flex-col gap-7 px-6 py-8">
       <TriggerPanel
         state={state}
         setState={setState}
@@ -165,9 +165,9 @@ export function FlowBuilder() {
 
       <EntryPicker state={state} setState={setState} t={t} />
 
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-foreground text-sm font-semibold">
+          <h2 className="text-foreground text-base font-semibold">
             {t('nodesTitle', { count: state.nodes.length })}
           </h2>
           <AddNodeButton onAdd={addNode} t={t} />
@@ -355,9 +355,9 @@ function EntryPicker({
 }) {
   if (state.nodes.length === 0) return null;
   return (
-    <section className="border-border bg-card flex items-center gap-3 rounded-lg border p-3">
+    <section className="border-border bg-card flex flex-wrap items-center gap-3 rounded-xl border p-4">
       <CornerDownRight className="text-primary h-4 w-4 shrink-0" />
-      <span className="text-muted-foreground text-xs">{t('entryNodeTitle')}</span>
+      <span className="text-muted-foreground text-sm">{t('entryNodeTitle')}</span>
       <NodeKeySelect
         value={state.entry_node_id}
         nodes={state.nodes}
@@ -428,31 +428,31 @@ function NodeCard({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-3 px-4 py-3 pl-5 text-left"
+        className="flex w-full items-center gap-3.5 px-5 py-4 pl-6 text-left"
       >
-        <NodeIconChip type={node.node_type} size={32} iconSize={16} />
+        <NodeIconChip type={node.node_type} size={36} iconSize={18} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span
-              className="truncate text-[11px] font-semibold tracking-wider uppercase"
+              className="truncate text-xs font-semibold tracking-wider uppercase"
               style={{ color: c.text }}
             >
               {t(`nodes.${node.node_type}.label`)}
             </span>
-            <code className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[10px]">
+            <code className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[11px]">
               {node.node_key}
             </code>
             {isEntry && (
               <Badge
                 variant="outline"
-                className="border-primary/40 bg-primary/10 text-primary text-[10px]"
+                className="border-primary/40 bg-primary/10 text-primary text-[11px]"
               >
                 {t('badgeEntry')}
               </Badge>
             )}
           </div>
           {!expanded && preview && (
-            <p className="text-muted-foreground mt-0.5 truncate text-xs">
+            <p className="text-muted-foreground mt-1 truncate text-sm">
               {preview}
             </p>
           )}
@@ -467,7 +467,7 @@ function NodeCard({
         )}
       </button>
       {expanded && (
-        <div className="border-border border-t px-4 py-4">
+        <div className="border-border border-t px-5 py-5">
           <NodeConfigWithAdvanced
             node={node}
             allNodes={allNodes}
@@ -595,7 +595,7 @@ function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: Retur
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="border-border bg-card text-foreground hover:bg-muted inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors"
+        className="border-border bg-card text-foreground hover:bg-muted inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium transition-colors"
         aria-label={t('addNode')}
       >
         <Plus className="h-3.5 w-3.5" />

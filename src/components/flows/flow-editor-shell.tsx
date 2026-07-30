@@ -95,7 +95,11 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
 
   return (
     <FlowEditorProvider initialFlow={initialFlow} initialNodes={initialNodes}>
-      <div className="flex h-full min-h-0 flex-col">
+      {/* Break out of dashboard main padding and pin to viewport height so
+          the canvas/list stage gets a real, stable height (React Flow's
+          fitView is unreliable when the parent only has h-full inside a
+          scrollable main). Matches the inbox layout pattern. */}
+      <div className="-m-4 flex h-[calc(100vh-3.5rem)] min-h-0 flex-col overflow-hidden sm:-m-6">
         <EditorHeader />
 
         {/* ---- mode row: view toggle + node-type legend ----
@@ -103,33 +107,33 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
             the legend is lg-only), so there's no empty band above the
             stage on small screens. */}
         {!isMobile && (
-          <div className="flex items-center gap-4 px-6 py-3.5">
+          <div className="flex flex-col gap-3 px-6 py-4 lg:flex-row lg:items-start lg:gap-6">
             <div
               role="group"
               aria-label="Editor view"
-              className="inline-flex gap-0.5 rounded-lg border border-border bg-muted p-0.5"
+              className="inline-flex shrink-0 gap-1 rounded-xl border border-border bg-muted p-1"
             >
               <SegButton
                 active={effectiveView === "canvas"}
                 onClick={() => choose("canvas")}
-                icon={<GitFork className="h-3.5 w-3.5" />}
+                icon={<GitFork className="h-4 w-4" />}
                 label={t("canvasView")}
               />
               <SegButton
                 active={effectiveView === "list"}
                 onClick={() => choose("list")}
-                icon={<List className="h-3.5 w-3.5" />}
+                icon={<List className="h-4 w-4" />}
                 label={t("listView")}
               />
             </div>
-            <div className="ml-auto hidden flex-wrap items-center gap-x-3.5 gap-y-1.5 lg:flex">
+            <div className="hidden flex-1 flex-wrap items-center gap-x-4 gap-y-2 lg:flex">
               {LEGEND_TYPES.map((t_type) => (
                 <span
                   key={t_type}
-                  className="inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground"
+                  className="inline-flex items-center gap-2 text-[13px] text-muted-foreground"
                 >
                   <span
-                    className="h-2.5 w-2.5 rounded-full"
+                    className="h-3 w-3 shrink-0 rounded-full"
                     style={{ background: nodeColors(t_type).solid }}
                   />
                   {t(`nodes.${t_type}.label`)}
@@ -151,7 +155,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
         </div>
 
         {/* ---- validation / activate-readiness bar ---- */}
-        <div className="px-6 pb-5 pt-3">
+        <div className="shrink-0 px-6 pb-4 pt-3">
           <ValidationPanel />
         </div>
       </div>
@@ -198,7 +202,7 @@ function SegButton({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+        "inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
         active
           ? "bg-card text-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground",
