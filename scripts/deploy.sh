@@ -25,6 +25,17 @@ cp .env.local .next/standalone/.env.local
 cp -r .next/static .next/standalone/.next/static
 cp -r public .next/standalone/public
 
+# PDF/DOCX parsers are serverExternalPackages — ensure they land in
+# standalone/node_modules even if file tracing misses a nested file.
+mkdir -p .next/standalone/node_modules
+for pkg in pdf-parse pdfjs-dist mammoth; do
+  if [[ -d "node_modules/$pkg" ]]; then
+    rm -rf ".next/standalone/node_modules/$pkg"
+    cp -a "node_modules/$pkg" ".next/standalone/node_modules/$pkg"
+  fi
+done
+# Worker is also inlined at runtime via pdf-parse/worker getData().
+
 echo "==> Restart PM2 (standalone)"
 pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
 pm2 start "$APP_DIR/.next/standalone/server.js" \

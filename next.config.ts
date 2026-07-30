@@ -69,6 +69,20 @@ const nextConfig: NextConfig = {
   // Harmless outside Docker: `next start` keeps working as before.
   output: "standalone",
 
+  // Keep PDF / DOCX parsers external so standalone tracing copies
+  // real node_modules (incl. pdf.worker) instead of a broken bundle.
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "mammoth"],
+
+  // Explicit includes for the knowledge-base upload route — the
+  // file tracer sometimes misses nested pdf-parse worker assets.
+  outputFileTracingIncludes: {
+    "/api/ai/knowledge/from-file": [
+      "./node_modules/pdf-parse/**/*",
+      "./node_modules/pdfjs-dist/**/*",
+      "./node_modules/mammoth/**/*",
+    ],
+  },
+
   /**
    * Cross-origin dev access (Next.js 16).
    *

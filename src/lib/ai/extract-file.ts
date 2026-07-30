@@ -4,7 +4,18 @@
  */
 
 import mammoth from "mammoth";
+import { getData } from "pdf-parse/worker";
 import { PDFParse } from "pdf-parse";
+
+// pdfjs fake-worker needs an explicit source in Next standalone builds
+// (Turbopack won't place pdf.worker.mjs next to the chunk). getData()
+// inlines the worker so we don't depend on a filesystem path.
+let workerReady = false;
+function ensurePdfWorker() {
+  if (workerReady) return;
+  PDFParse.setWorker(getData());
+  workerReady = true;
+}
 
 export class FileImportError extends Error {
   constructor(
@@ -122,6 +133,7 @@ export async function extractTextFromUpload(
 }
 
 async function extractPdf(buffer: Buffer): Promise<string> {
+  ensurePdfWorker();
   const parser = new PDFParse({ data: new Uint8Array(buffer) });
   try {
     const result = await parser.getText();
