@@ -45,9 +45,25 @@ ReplyFlow fetches the HTML, extracts readable text, stores it, and indexes it. T
 
 - Works best on normal HTML pages (marketing sites, FAQ pages).
 - Heavy JavaScript-only apps may return little text — paste manually instead.
-- PDFs and images are **not** imported yet.
 - Private/local URLs are blocked for security.
 - Very large pages are truncated.
+- To import a PDF brochure, use **Upload file** (Option C), not a URL.
+
+### Option C — Upload PDF / DOCX / Markdown
+
+1. Click **Add document**.
+2. Switch to **Upload file**.
+3. Choose a **Category**.
+4. Select a **PDF**, **Word (.docx)**, **Markdown (.md)**, or **TXT** file (max 8 MB).
+5. Optionally set the title.
+6. Click **Upload & import**.
+
+**Notes**
+
+- Text is extracted on the server and indexed like pasted docs.
+- Scanned/image-only PDFs often have no text layer — paste or OCR first.
+- Legacy `.doc` (not `.docx`) is not supported.
+- Original filename is stored as the document source label.
 
 ## Categories
 

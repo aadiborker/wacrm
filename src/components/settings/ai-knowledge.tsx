@@ -11,6 +11,8 @@ import {
   BookOpen,
   Link2,
   ExternalLink,
+  Upload,
+  FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,10 +36,18 @@ interface DocSummary {
   updated_at: string;
 }
 
+function isUploadSourceLabel(source: string | null | undefined): boolean {
+  return !!source && source.startsWith('upload:');
+}
+
+function displayUploadFilename(source: string): string {
+  return source.replace(/^upload:/, '');
+}
+
 /** Editor target: 'new' when creating, a doc id when editing, null when closed. */
 type EditTarget = 'new' | string | null;
 
-type EditorMode = 'paste' | 'url';
+type EditorMode = 'paste' | 'url' | 'file';
 
 const SUGGESTED_CATEGORIES = [
   'FAQ',
@@ -66,7 +76,9 @@ export function AiKnowledgeCard({
   const [category, setCategory] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
   const [importUrl, setImportUrl] = useState('');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
   const loadedAccountIdRef = useRef<string | null>(null);
@@ -114,6 +126,8 @@ export function AiKnowledgeCard({
     setCategory('');
     setSourceUrl('');
     setImportUrl('');
+    setUploadFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
     setEditorMode('paste');
   };
 
@@ -211,6 +225,37 @@ export function AiKnowledgeCard({
       }
     } catch {
       toast.error(t('importFailed'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const importFromFile = async () => {
+    if (!uploadFile) {
+      toast.error(t('fileRequired'));
+      return;
+    }
+    setSaving(true);
+    try {
+      const form = new FormData();
+      form.set('file', uploadFile);
+      if (category.trim()) form.set('category', category.trim());
+      if (title.trim()) form.set('title', title.trim());
+      const res = await fetch('/api/ai/knowledge/from-file', {
+        method: 'POST',
+        body: form,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.warning) toast.warning(data.warning);
+        else toast.success(t('fileImportSuccess'));
+        cancelEdit();
+        await fetchDocs();
+      } else {
+        toast.error(data.error ?? t('fileImportFailed'));
+      }
+    } catch {
+      toast.error(t('fileImportFailed'));
     } finally {
       setSaving(false);
     }
@@ -319,15 +364,24 @@ export function AiKnowledgeCard({
                         )}
                       </div>
                       {doc.source_url && (
-                        <a
-                          href={doc.source_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[11px] text-primary hover:underline"
-                        >
-                          <ExternalLink className="h-3 w-3 shrink-0" />
-                          <span className="truncate">{doc.source_url}</span>
-                        </a>
+                        isUploadSourceLabel(doc.source_url) ? (
+                          <span className="mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[11px] text-muted-foreground">
+                            <FileText className="h-3 w-3 shrink-0" />
+                            <span className="truncate">
+                              {displayUploadFilename(doc.source_url)}
+                            </span>
+                          </span>
+                        ) : (
+                          <a
+                            href={doc.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[11px] text-primary hover:underline"
+                          >
+                            <ExternalLink className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{doc.source_url}</span>
+                          </a>
+                        )
                       )}
                     </div>
                     {canEdit && (
@@ -360,7 +414,7 @@ export function AiKnowledgeCard({
             {editing !== null ? (
               <div className="space-y-3 rounded-md border border-border p-3">
                 {editing === 'new' && (
-                  <div className="inline-flex gap-1 rounded-lg border border-border bg-muted p-1">
+                  <div className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-muted p-1">
                     <ModeTab
                       active={editorMode === 'paste'}
                       onClick={() => setEditorMode('paste')}
@@ -370,6 +424,11 @@ export function AiKnowledgeCard({
                       active={editorMode === 'url'}
                       onClick={() => setEditorMode('url')}
                       label={t('modeUrl')}
+                    />
+                    <ModeTab
+                      active={editorMode === 'file'}
+                      onClick={() => setEditorMode('file')}
+                      label={t('modeFile')}
                     />
                   </div>
                 )}
@@ -447,6 +506,70 @@ export function AiKnowledgeCard({
                         )}
                         <Link2 className="mr-2 h-4 w-4" />
                         {t('importUrl')}
+                      </Button>
+                    </div>
+                  </>
+                ) : editorMode === 'file' && editing === 'new' ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="kb-file">{t('fileLabel')}</Label>
+                      <input
+                        id="kb-file"
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,.docx,.md,.markdown,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain"
+                        disabled={saving}
+                        className="block w-full text-sm text-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] ?? null;
+                          setUploadFile(f);
+                          if (f && !title.trim()) {
+                            setTitle(
+                              f.name
+                                .replace(/\.[a-z0-9]+$/i, '')
+                                .replace(/[-_]+/g, ' ')
+                                .trim(),
+                            );
+                          }
+                        }}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t('fileHint')}
+                      </p>
+                      {uploadFile && (
+                        <p className="text-xs text-foreground">
+                          {t('fileSelected', {
+                            name: uploadFile.name,
+                            sizeMb: (uploadFile.size / (1024 * 1024)).toFixed(2),
+                          })}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="kb-title-file">
+                        {t('editDocTitleOptional')}
+                      </Label>
+                      <Input
+                        id="kb-title-file"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        placeholder={t('editDocTitlePlaceholder')}
+                        disabled={saving}
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" onClick={cancelEdit} disabled={saving}>
+                        {t('cancel')}
+                      </Button>
+                      <Button
+                        onClick={() => void importFromFile()}
+                        disabled={saving || !uploadFile}
+                      >
+                        {saving && (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        )}
+                        <Upload className="mr-2 h-4 w-4" />
+                        {t('importFile')}
                       </Button>
                     </div>
                   </>
