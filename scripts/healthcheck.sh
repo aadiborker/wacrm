@@ -51,19 +51,35 @@ else
   bad "df not available"
 fi
 
-# 2) PM2 process
+# 2) PM2 process (prefer JSON via node — pm2 describe table parsing is fragile)
 if command -v pm2 >/dev/null 2>&1; then
-  describe=$(pm2 describe "$PM2_NAME" 2>/dev/null || true)
-  if echo "$describe" | grep -qiE 'status[[:space:]]+│[[:space:]]+online|status[[:space:]]+online'; then
-    ok "PM2 process '${PM2_NAME}' is online"
-  elif echo "$describe" | grep -qi 'online'; then
+  pm2_meta=$(pm2 jlist 2>/dev/null | node -e "
+const name = process.argv[1];
+let data = '';
+process.stdin.on('data', c => data += c);
+process.stdin.on('end', () => {
+  try {
+    const list = JSON.parse(data || '[]');
+    const p = list.find(x => x.name === name);
+    if (!p) { console.log('missing|||'); process.exit(0); }
+    const env = p.pm2_env || {};
+    const status = env.status || '';
+    const script = env.pm_exec_path || p.pm_exec_path || '';
+    const cwd = env.pm_cwd || '';
+    console.log([status, script, cwd].join('|'));
+  } catch (e) {
+    console.log('error|||');
+  }
+});
+" "$PM2_NAME" 2>/dev/null || echo "error|||")
+
+  IFS='|' read -r status script cwd <<<"$pm2_meta"
+
+  if [[ "$status" == "online" ]]; then
     ok "PM2 process '${PM2_NAME}' is online"
   else
-    bad "PM2 process '${PM2_NAME}' not online"
+    bad "PM2 process '${PM2_NAME}' not online (status: ${status:-unknown})"
   fi
-
-  script=$(echo "$describe" | grep -i 'script path' | head -n1 | sed 's/.*│//' | sed 's/│.*//' | xargs || true)
-  cwd=$(echo "$describe" | grep -iE 'exec cwd|cwd' | head -n1 | sed 's/.*│//' | sed 's/│.*//' | xargs || true)
 
   if [[ "$script" == *"/standalone/server.js" ]]; then
     ok "PM2 script is standalone server.js"
