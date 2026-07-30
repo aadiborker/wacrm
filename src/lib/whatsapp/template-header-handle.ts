@@ -4,81 +4,121 @@ import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 
 /**
  * Meta requires an `example.header_handle` (from the Resumable Upload
- * API) to create/edit a template with an IMAGE header — a plain public
- * URL is not accepted at creation time. This helper turns the template's
- * `header_media_url` (whether the user uploaded a file or pasted a link)
- * into a handle and writes it onto the payload, so both the upload path
- * and the legacy URL path actually succeed.
+ * API) to create/edit a template with an IMAGE or VIDEO header — a plain
+ * public URL is not accepted at creation time. This helper turns the
+ * template's `header_media_url` (uploaded file or pasted link) into a
+ * handle and writes it onto the payload.
  *
- * No-op unless the header is an image that has a URL but no handle yet.
- * Image-only for now (the #230 scope); video/document handles can follow
- * the same shape.
+ * No-op unless the header is image/video with a URL but no handle yet.
  */
 
-// Meta's image-header sample limits.
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png']
+const VIDEO_MAX_BYTES = 16 * 1024 * 1024
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png'] as const
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/3gpp'] as const
 
+type MediaKind = 'image' | 'video'
+
+function mediaKind(
+  headerType: TemplatePayload['header_type'],
+): MediaKind | null {
+  if (headerType === 'image' || headerType === 'video') return headerType
+  return null
+}
+
+/**
+ * @deprecated Prefer {@link ensureHeaderMediaHandle}. Kept as an alias so
+ * existing imports/tests keep working.
+ */
 export async function ensureImageHeaderHandle(
   payload: TemplatePayload,
   accessToken: string,
 ): Promise<void> {
-  if (payload.header_type !== 'image') return
-  if (payload.header_handle) return // already have one
-  if (!payload.header_media_url) return // validator already requires url-or-handle
+  return ensureHeaderMediaHandle(payload, accessToken)
+}
+
+export async function ensureHeaderMediaHandle(
+  payload: TemplatePayload,
+  accessToken: string,
+): Promise<void> {
+  const kind = mediaKind(payload.header_type)
+  if (!kind) return
+  if (payload.header_handle) return
+  if (!payload.header_media_url) return
 
   const appId = process.env.META_APP_ID
   if (!appId) {
     throw new Error(
-      'Image-header templates need META_APP_ID set (used for Meta’s Resumable Upload). Add it to your environment, or remove the image header.',
+      `${kind === 'image' ? 'Image' : 'Video'}-header templates need META_APP_ID set (used for Meta’s Resumable Upload). Add it to your environment, or remove the ${kind} header.`,
     )
   }
 
-  // SSRF guard: `header_media_url` is caller-supplied (any authenticated
-  // member can submit a template) and the fetch below happens server-side,
-  // so refuse any destination that resolves to a private / loopback /
-  // link-local / reserved address. Same guard, same message as the two
-  // other outbound-fetch call sites (see lib/webhooks/ssrf.ts) — matching
-  // the unreachable-host message keeps the failure from being an oracle.
+  const label = kind === 'image' ? 'header image' : 'header video'
+
   if (!(await isDeliverableUrl(payload.header_media_url))) {
-    throw new Error('Could not fetch the header image URL. Make sure it is publicly reachable.')
+    throw new Error(
+      `Could not fetch the ${label} URL. Make sure it is publicly reachable.`,
+    )
   }
 
-  // Fetch the sample image bytes (works for our uploaded chat-media URL
-  // and for a manually-pasted public link).
   let res: Response
   try {
     res = await fetch(payload.header_media_url, {
-      // Do NOT follow redirects — a public URL could 3xx-bounce to an
-      // internal address, defeating the guard above. Bound the request so
-      // a hung host can't tie up the template-submit handler.
       redirect: 'manual',
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(kind === 'video' ? 30_000 : 10_000),
     })
   } catch {
-    throw new Error('Could not fetch the header image URL. Make sure it is publicly reachable.')
+    throw new Error(
+      `Could not fetch the ${label} URL. Make sure it is publicly reachable.`,
+    )
   }
   if (!res.ok) {
-    throw new Error(`Header image URL returned ${res.status}. It must be publicly reachable.`)
+    throw new Error(
+      `${kind === 'image' ? 'Header image' : 'Header video'} URL returned ${res.status}. It must be publicly reachable.`,
+    )
   }
 
-  const contentType = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
-  if (contentType && !ALLOWED_IMAGE_TYPES.includes(contentType)) {
-    throw new Error(`Header image must be JPEG or PNG (got ${contentType}).`)
+  const contentType = (res.headers.get('content-type') || '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase()
+
+  const allowed =
+    kind === 'image' ? ALLOWED_IMAGE_TYPES : ALLOWED_VIDEO_TYPES
+  const maxBytes = kind === 'image' ? IMAGE_MAX_BYTES : VIDEO_MAX_BYTES
+
+  if (contentType && !(allowed as readonly string[]).includes(contentType)) {
+    throw new Error(
+      kind === 'image'
+        ? `Header image must be JPEG or PNG (got ${contentType}).`
+        : `Header video must be MP4 or 3GPP (got ${contentType}).`,
+    )
   }
 
   const bytes = new Uint8Array(await res.arrayBuffer())
   if (bytes.byteLength === 0) {
-    throw new Error('Header image is empty.')
-  }
-  if (bytes.byteLength > IMAGE_MAX_BYTES) {
     throw new Error(
-      `Header image is ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB — Meta's limit is 5 MB.`,
+      kind === 'image' ? 'Header image is empty.' : 'Header video is empty.',
+    )
+  }
+  if (bytes.byteLength > maxBytes) {
+    const limitMb = kind === 'image' ? 5 : 16
+    throw new Error(
+      `Header ${kind} is ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB — Meta's limit is ${limitMb} MB.`,
     )
   }
 
-  const mimeType = ALLOWED_IMAGE_TYPES.includes(contentType) ? contentType : 'image/jpeg'
-  const fileName = mimeType === 'image/png' ? 'header.png' : 'header.jpg'
+  let mimeType: string
+  let fileName: string
+  if (kind === 'image') {
+    mimeType =
+      contentType === 'image/png' ? 'image/png' : 'image/jpeg'
+    fileName = mimeType === 'image/png' ? 'header.png' : 'header.jpg'
+  } else {
+    mimeType =
+      contentType === 'video/3gpp' ? 'video/3gpp' : 'video/mp4'
+    fileName = mimeType === 'video/3gpp' ? 'header.3gp' : 'header.mp4'
+  }
 
   const { handle } = await uploadResumableMedia({
     appId,

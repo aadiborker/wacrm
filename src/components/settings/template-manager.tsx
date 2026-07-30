@@ -458,22 +458,41 @@ export function TemplateManager() {
   const headerNeedsMedia =
     form.header_format !== 'none' && form.header_format !== 'text';
 
-  async function handleHeaderImageFile(file: File) {
-    if (!['image/jpeg', 'image/png'].includes(file.type)) {
-      toast.error(t('toastInvalidImage'));
+  async function handleHeaderMediaFile(file: File) {
+    const format = form.header_format;
+    if (format === 'image') {
+      if (!['image/jpeg', 'image/png'].includes(file.type)) {
+        toast.error(t('toastInvalidImage'));
+        return;
+      }
+      if (file.size > MEDIA_MAX_BYTES_BY_KIND.image) {
+        toast.error(
+          t('toastImageTooLarge', { size: (file.size / 1024 / 1024).toFixed(1) }),
+        );
+        return;
+      }
+    } else if (format === 'video') {
+      if (!['video/mp4', 'video/3gpp'].includes(file.type)) {
+        toast.error(t('toastInvalidVideo'));
+        return;
+      }
+      if (file.size > MEDIA_MAX_BYTES_BY_KIND.video) {
+        toast.error(
+          t('toastVideoTooLarge', { size: (file.size / 1024 / 1024).toFixed(1) }),
+        );
+        return;
+      }
+    } else {
       return;
     }
-    if (file.size > MEDIA_MAX_BYTES_BY_KIND.image) {
-      toast.error(
-        t('toastImageTooLarge', { size: (file.size / 1024 / 1024).toFixed(1) }),
-      );
-      return;
-    }
+
     setUploadingHeader(true);
     try {
       const { publicUrl } = await uploadAccountMedia('chat-media', file);
       setForm((f) => ({ ...f, header_media_url: publicUrl }));
-      toast.success(t('toastUploadSuccess'));
+      toast.success(
+        format === 'video' ? t('toastVideoUploadSuccess') : t('toastUploadSuccess'),
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('toastUploadFailed'));
     } finally {
@@ -801,16 +820,21 @@ export function TemplateManager() {
 
               {headerNeedsMedia && (
                 <div className="space-y-2 mt-2">
-                  {form.header_format === 'image' && (
+                  {(form.header_format === 'image' ||
+                    form.header_format === 'video') && (
                     <div className="flex items-center gap-2">
                       <input
                         ref={headerFileRef}
                         type="file"
-                        accept="image/jpeg,image/png"
+                        accept={
+                          form.header_format === 'image'
+                            ? 'image/jpeg,image/png'
+                            : 'video/mp4,video/3gpp'
+                        }
                         className="hidden"
                         onChange={(e) => {
                           const f = e.target.files?.[0];
-                          if (f) void handleHeaderImageFile(f);
+                          if (f) void handleHeaderMediaFile(f);
                           e.target.value = '';
                         }}
                       />
@@ -826,10 +850,14 @@ export function TemplateManager() {
                         ) : (
                           <Upload className="h-3.5 w-3.5" />
                         )}
-                        {t('uploadImage')}
+                        {form.header_format === 'video'
+                          ? t('uploadVideo')
+                          : t('uploadImage')}
                       </Button>
                       <span className="text-[11px] text-muted-foreground">
-                        {t('uploadHint')}
+                        {form.header_format === 'video'
+                          ? t('uploadVideoHint')
+                          : t('uploadHint')}
                       </span>
                     </div>
                   )}
@@ -847,6 +875,13 @@ export function TemplateManager() {
                       src={form.header_media_url}
                       alt="Header sample"
                       className="max-h-28 rounded-md border border-border object-contain"
+                    />
+                  )}
+                  {form.header_format === 'video' && form.header_media_url && (
+                    <video
+                      src={form.header_media_url}
+                      controls
+                      className="max-h-40 w-full rounded-md border border-border bg-black"
                     />
                   )}
                   <p className="text-[11px] text-muted-foreground leading-relaxed">

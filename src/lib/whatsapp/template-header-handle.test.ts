@@ -48,11 +48,60 @@ describe('ensureImageHeaderHandle', () => {
     vi.unstubAllEnvs();
   });
 
-  it('is a no-op for non-image headers', async () => {
+  it('is a no-op for non-media headers', async () => {
     const p = payload({ header_type: 'text', header_content: 'Hi' });
     await ensureImageHeaderHandle(p, 'tok');
     expect(uploadResumableMedia).not.toHaveBeenCalled();
     expect(p.header_handle).toBeUndefined();
+  });
+
+  it('derives + sets header_handle from a valid video URL', async () => {
+    vi.stubEnv('META_APP_ID', 'app-1');
+    vi.stubGlobal('fetch', vi.fn(async () => imgResponse('video/mp4', 4096)));
+    const p = payload({
+      header_type: 'video',
+      header_media_url: 'https://x.test/clip.mp4',
+    });
+    await ensureImageHeaderHandle(p, 'tok');
+    expect(uploadResumableMedia).toHaveBeenCalledOnce();
+    expect(uploadResumableMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mimeType: 'video/mp4',
+        fileName: 'header.mp4',
+      }),
+    );
+    expect(p.header_handle).toBe('HANDLE123');
+  });
+
+  it('rejects a non-video content type for video headers', async () => {
+    vi.stubEnv('META_APP_ID', 'app-1');
+    vi.stubGlobal('fetch', vi.fn(async () => imgResponse('text/html')));
+    await expect(
+      ensureImageHeaderHandle(
+        payload({
+          header_type: 'video',
+          header_media_url: 'https://x.test/clip.mp4',
+        }),
+        'tok',
+      ),
+    ).rejects.toThrow(/MP4 or 3GPP/);
+  });
+
+  it('rejects a video over 16 MB', async () => {
+    vi.stubEnv('META_APP_ID', 'app-1');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => imgResponse('video/mp4', 17 * 1024 * 1024)),
+    );
+    await expect(
+      ensureImageHeaderHandle(
+        payload({
+          header_type: 'video',
+          header_media_url: 'https://x.test/clip.mp4',
+        }),
+        'tok',
+      ),
+    ).rejects.toThrow(/16 MB/);
   });
 
   it('is a no-op when a handle already exists', async () => {
