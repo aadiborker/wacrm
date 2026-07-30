@@ -19,7 +19,7 @@ export async function GET() {
     const { supabase, accountId } = await getCurrentAccount()
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, updated_at')
+      .select('id, title, category, source_url, updated_at')
       .eq('account_id', accountId)
       .order('updated_at', { ascending: false })
     if (error) {
@@ -50,16 +50,29 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null)
     const title = typeof body?.title === 'string' ? body.title.trim() : ''
     const content = typeof body?.content === 'string' ? body.content.trim() : ''
+    const categoryRaw =
+      typeof body?.category === 'string' ? body.category.trim() : ''
+    const sourceUrlRaw =
+      typeof body?.source_url === 'string' ? body.source_url.trim() : ''
     if (!title || !content) {
       return NextResponse.json(
         { error: 'title and content are required' },
         { status: 400 },
       )
     }
+    const category = categoryRaw.length > 0 ? categoryRaw.slice(0, 64) : null
+    const source_url = sourceUrlRaw.length > 0 ? sourceUrlRaw.slice(0, 2048) : null
 
     const { data: doc, error } = await supabase
       .from('ai_knowledge_documents')
-      .insert({ account_id: accountId, created_by: userId, title, content })
+      .insert({
+        account_id: accountId,
+        created_by: userId,
+        title,
+        content,
+        category,
+        source_url,
+      })
       .select('id')
       .single()
     if (error || !doc) {

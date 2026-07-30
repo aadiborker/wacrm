@@ -20,7 +20,7 @@ export async function GET(_request: Request, { params }: Params) {
     const { id } = await params
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, content, updated_at')
+      .select('id, title, content, category, source_url, updated_at')
       .eq('account_id', accountId)
       .eq('id', id)
       .maybeSingle()
@@ -49,7 +49,17 @@ export async function PATCH(request: Request, { params }: Params) {
     const body = await request.json().catch(() => null)
     const title = typeof body?.title === 'string' ? body.title.trim() : undefined
     const content = typeof body?.content === 'string' ? body.content.trim() : undefined
-    if (title === undefined && content === undefined) {
+    const categoryProvided = typeof body?.category === 'string'
+    const categoryRaw = categoryProvided ? body.category.trim() : undefined
+    const sourceUrlProvided = typeof body?.source_url === 'string'
+    const sourceUrlRaw = sourceUrlProvided ? body.source_url.trim() : undefined
+
+    if (
+      title === undefined &&
+      content === undefined &&
+      !categoryProvided &&
+      !sourceUrlProvided
+    ) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
     }
     if (title !== undefined && !title) {
@@ -59,9 +69,19 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: 'content cannot be empty' }, { status: 400 })
     }
 
-    const update: Record<string, string> = {}
+    const update: Record<string, string | null> = {}
     if (title !== undefined) update.title = title
     if (content !== undefined) update.content = content
+    if (categoryProvided) {
+      update.category = categoryRaw && categoryRaw.length > 0
+        ? categoryRaw.slice(0, 64)
+        : null
+    }
+    if (sourceUrlProvided) {
+      update.source_url = sourceUrlRaw && sourceUrlRaw.length > 0
+        ? sourceUrlRaw.slice(0, 2048)
+        : null
+    }
 
     const { data: updated, error } = await supabase
       .from('ai_knowledge_documents')
