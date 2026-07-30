@@ -42,3 +42,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local ops / secrets (never push)
+supabase/migration-apply.log
+supabase/*password*.txt
+supabase/superbase_password.txt
