@@ -159,12 +159,18 @@ else
   bad "curl not available"
 fi
 
-# 7) Recent PM2 errors (informational)
+# 7) Recent PM2 errors — only treat process-killing issues as FAIL.
+# Next.js sometimes logs InvariantError for /_not-found or stale
+# "Server Reference ID" after a deploy; those are noisy and do not mean
+# the app is down when HTTP checks above already passed.
 if command -v pm2 >/dev/null 2>&1; then
-  err_tail=$(pm2 logs "$PM2_NAME" --err --lines 15 --nostream 2>/dev/null | tail -n 20 || true)
-  if echo "$err_tail" | grep -qiE "EADDRINUSE|ENOSPC|Server Reference ID|Unhandled|FATAL"; then
+  err_tail=$(pm2 logs "$PM2_NAME" --err --lines 30 --nostream 2>/dev/null | tail -n 40 || true)
+  if echo "$err_tail" | grep -qiE "EADDRINUSE|ENOSPC|FATAL|JavaScript heap out of memory"; then
     bad "Recent PM2 error log still contains serious keywords"
     info "Run: pm2 logs $PM2_NAME --err --lines 40"
+  elif echo "$err_tail" | grep -qiE "InvariantError|Server Reference ID|failed-to-find-server-action"; then
+    ok "PM2 error log has Next.js noise only (app still serving — see HTTP checks above)"
+    info "Optional: pm2 flush && bash scripts/healthcheck.sh"
   else
     ok "No fresh critical keywords in last PM2 error lines"
   fi

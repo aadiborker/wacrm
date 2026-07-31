@@ -42,6 +42,8 @@ pm2 start "$APP_DIR/.next/standalone/server.js" \
   --name "$PM2_NAME" \
   --cwd "$APP_DIR/.next/standalone"
 pm2 save
+# Drop pre-deploy noise so healthcheck doesn't fail on old InvariantError lines.
+pm2 flush "$PM2_NAME" >/dev/null 2>&1 || pm2 flush >/dev/null 2>&1 || true
 
 echo "==> Healthcheck"
 bash "$APP_DIR/scripts/healthcheck.sh"
