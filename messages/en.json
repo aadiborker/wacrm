@@ -1042,6 +1042,7 @@
       "actionMessage": "Send a message, then hand off",
       "actionSubmenu": "Show another menu",
       "actionSubmenuWith": "submenu ({count} choices)",
+      "actionEnd": "End conversation",
       "messageLabel": "Message to send",
       "messagePlaceholder": "Thanks — here's what you need to know…",
       "handoffNoteLabel": "Note for agents (optional)",

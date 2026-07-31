@@ -77,8 +77,8 @@ describe("buildSimpleMenuFlow", () => {
     expect(keys).toContain("menu_main");
     expect(keys).toContain("menu_sub_1");
     expect(keys).toContain("handoff_0");
-    expect(keys).toContain("msg_1_0");
-    expect(keys).toContain("end");
+    expect(keys).toContain("msg_sub_1_0");
+    expect(keys).not.toContain("end");
 
     const main = built.nodes.find((n) => n.node_key === "menu_main");
     expect(main?.node_type).toBe("send_list");
@@ -86,5 +86,35 @@ describe("buildSimpleMenuFlow", () => {
       sections: Array<{ rows: Array<{ next_node_key: string }> }>;
     };
     expect(cfg.sections[0].rows).toHaveLength(2);
+  });
+
+  it("supports nested submenu and end on leaf choices", () => {
+    const built = buildSimpleMenuFlow({
+      name: "Nested",
+      keyword: "Hi",
+      welcomeText: "Welcome",
+      options: [
+        {
+          title: "Browse",
+          action: "submenu",
+          submenuBody: "Products?",
+          submenuOptions: [
+            {
+              title: "iPhones",
+              action: "submenu",
+              submenuBody: "Usage?",
+              submenuOptions: [
+                { title: "For home", action: "handoff" },
+                { title: "Done", action: "end" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const keys = built.nodes.map((n) => n.node_key);
+    expect(keys).toContain("menu_sub_0");
+    expect(keys.some((k) => k.startsWith("menu_sub_0_"))).toBe(true);
+    expect(keys).toContain("end");
   });
 });

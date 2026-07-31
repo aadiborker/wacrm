@@ -18,13 +18,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   blankSimpleMenuSpec,
@@ -35,6 +28,7 @@ import {
   type SimpleMenuLeaf,
   type SimpleMenuOption,
   type SimpleMenuOptionAction,
+  type SimpleLeafAction,
   type SimpleMenuSpec,
 } from "@/lib/flows/simple-menu";
 import { SimpleMenuCanvasPreview } from "@/components/flows/simple-menu-canvas-preview";
@@ -207,6 +201,27 @@ export function SimpleMenuWizard() {
     }));
   }
 
+  function updateNestedLeaf(
+    optIndex: number,
+    leafIndex: number,
+    nestedIndex: number,
+    patchLeaf: Partial<SimpleMenuLeaf>,
+  ) {
+    setSpec((s) => ({
+      ...s,
+      options: s.options.map((o, i) => {
+        if (i !== optIndex) return o;
+        const submenuOptions = [...(o.submenuOptions ?? [])];
+        const parent = submenuOptions[leafIndex];
+        if (!parent) return o;
+        const nested = [...(parent.submenuOptions ?? [])];
+        nested[nestedIndex] = { ...nested[nestedIndex]!, ...patchLeaf };
+        submenuOptions[leafIndex] = { ...parent, submenuOptions: nested };
+        return { ...o, submenuOptions };
+      }),
+    }));
+  }
+
   function addLeaf(optIndex: number) {
     setSpec((s) => ({
       ...s,
@@ -217,6 +232,25 @@ export function SimpleMenuWizard() {
           { title: "", action: "handoff" as const },
         ];
         if (submenuOptions.length > 10) return o;
+        return { ...o, submenuOptions };
+      }),
+    }));
+  }
+
+  function addNestedLeaf(optIndex: number, leafIndex: number) {
+    setSpec((s) => ({
+      ...s,
+      options: s.options.map((o, i) => {
+        if (i !== optIndex) return o;
+        const submenuOptions = [...(o.submenuOptions ?? [])];
+        const parent = submenuOptions[leafIndex];
+        if (!parent) return o;
+        const nested = [
+          ...(parent.submenuOptions ?? []),
+          { title: "", action: "handoff" as const },
+        ];
+        if (nested.length > 10) return o;
+        submenuOptions[leafIndex] = { ...parent, submenuOptions: nested };
         return { ...o, submenuOptions };
       }),
     }));
@@ -233,6 +267,29 @@ export function SimpleMenuWizard() {
             (_, j) => j !== leafIndex,
           ),
         };
+      }),
+    }));
+  }
+
+  function removeNestedLeaf(
+    optIndex: number,
+    leafIndex: number,
+    nestedIndex: number,
+  ) {
+    setSpec((s) => ({
+      ...s,
+      options: s.options.map((o, i) => {
+        if (i !== optIndex) return o;
+        const submenuOptions = [...(o.submenuOptions ?? [])];
+        const parent = submenuOptions[leafIndex];
+        if (!parent) return o;
+        submenuOptions[leafIndex] = {
+          ...parent,
+          submenuOptions: (parent.submenuOptions ?? []).filter(
+            (_, j) => j !== nestedIndex,
+          ),
+        };
+        return { ...o, submenuOptions };
       }),
     }));
   }
@@ -376,6 +433,9 @@ export function SimpleMenuWizard() {
               onAddLeaf={() => addLeaf(i)}
               onUpdateLeaf={(j, p) => updateLeaf(i, j, p)}
               onRemoveLeaf={(j) => removeLeaf(i, j)}
+              onAddNestedLeaf={(j) => addNestedLeaf(i, j)}
+              onUpdateNestedLeaf={(j, k, p) => updateNestedLeaf(i, j, k, p)}
+              onRemoveNestedLeaf={(j, k) => removeNestedLeaf(i, j, k)}
             />
           ))}
           <Button
@@ -420,7 +480,9 @@ export function SimpleMenuWizard() {
                     })
                   : o.action === "message"
                     ? t("actionMessage")
-                    : t("actionHandoff")}
+                    : o.action === "end"
+                      ? t("actionEnd")
+                      : t("actionHandoff")}
               </li>
             ))}
           </ul>
@@ -514,6 +576,9 @@ function OptionCard({
   onAddLeaf,
   onUpdateLeaf,
   onRemoveLeaf,
+  onAddNestedLeaf,
+  onUpdateNestedLeaf,
+  onRemoveNestedLeaf,
 }: {
   index: number;
   option: SimpleMenuOption;
@@ -524,6 +589,13 @@ function OptionCard({
   onAddLeaf: () => void;
   onUpdateLeaf: (j: number, p: Partial<SimpleMenuLeaf>) => void;
   onRemoveLeaf: (j: number) => void;
+  onAddNestedLeaf: (j: number) => void;
+  onUpdateNestedLeaf: (
+    j: number,
+    k: number,
+    p: Partial<SimpleMenuLeaf>,
+  ) => void;
+  onRemoveNestedLeaf: (j: number, k: number) => void;
 }) {
   return (
     <div className="space-y-3 rounded-xl border border-border bg-card p-4">
@@ -556,46 +628,27 @@ function OptionCard({
       </div>
       <div className="space-y-2">
         <Label>{t("whenTapped")}</Label>
-        {/* Visible buttons — the Select popup was clipping the 3rd
-            option ("Show another menu") on short viewports. */}
-        <div className="grid gap-2">
-          {(
-            [
-              ["handoff", t("actionHandoff")],
-              ["message", t("actionMessage")],
-              ["submenu", t("actionSubmenu")],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => {
-                const action = value as SimpleMenuOptionAction;
-                onChange({
-                  action,
-                  submenuOptions:
-                    action === "submenu"
-                      ? option.submenuOptions?.length
-                        ? option.submenuOptions
-                        : [{ title: "", action: "handoff" }]
-                      : option.submenuOptions,
-                  submenuBody:
-                    action === "submenu"
-                      ? option.submenuBody || ""
-                      : option.submenuBody,
-                });
-              }}
-              className={cn(
-                "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
-                option.action === value
-                  ? "border-primary bg-primary/10 font-medium text-foreground"
-                  : "border-border bg-muted text-muted-foreground hover:border-primary/40 hover:text-foreground",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <ActionPicker
+          value={option.action}
+          t={t}
+          includeSubmenu
+          includeEnd
+          onChange={(action) => {
+            onChange({
+              action: action as SimpleMenuOptionAction,
+              submenuOptions:
+                action === "submenu"
+                  ? option.submenuOptions?.length
+                    ? option.submenuOptions
+                    : [{ title: "", action: "handoff" }]
+                  : option.submenuOptions,
+              submenuBody:
+                action === "submenu"
+                  ? option.submenuBody || ""
+                  : option.submenuBody,
+            });
+          }}
+        />
       </div>
 
       {option.action === "message" && (
@@ -636,59 +689,19 @@ function OptionCard({
             />
           </div>
           {(option.submenuOptions ?? []).map((leaf, j) => (
-            <div
+            <LeafCard
               key={j}
-              className="space-y-2 rounded-md border border-border bg-card p-3"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  {t("subOptionN", { n: j + 1 })}
-                </span>
-                {(option.submenuOptions?.length ?? 0) > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => onRemoveLeaf(j)}
-                    className="text-destructive"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <Input
-                  value={leaf.title}
-                  onChange={(e) => onUpdateLeaf(j, { title: e.target.value })}
-                  placeholder={t("optionTitlePlaceholder")}
-                  className="bg-muted"
-                />
-                <CharCount value={leaf.title} max={SIMPLE_MENU_TITLE_MAX} />
-              </div>
-              <Select
-                value={leaf.action}
-                onValueChange={(v) =>
-                  onUpdateLeaf(j, { action: v as "handoff" | "message" })
-                }
-              >
-                <SelectTrigger className="bg-muted">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <SelectItem value="handoff">{t("actionHandoff")}</SelectItem>
-                  <SelectItem value="message">{t("actionMessage")}</SelectItem>
-                </SelectContent>
-              </Select>
-              {leaf.action === "message" && (
-                <Textarea
-                  value={leaf.messageText ?? ""}
-                  onChange={(e) =>
-                    onUpdateLeaf(j, { messageText: e.target.value })
-                  }
-                  placeholder={t("messagePlaceholder")}
-                  rows={2}
-                  className="bg-muted"
-                />
-              )}
-            </div>
+              leaf={leaf}
+              index={j}
+              t={t}
+              canRemove={(option.submenuOptions?.length ?? 0) > 1}
+              allowNestedSubmenu
+              onChange={(p) => onUpdateLeaf(j, p)}
+              onRemove={() => onRemoveLeaf(j)}
+              onAddNested={() => onAddNestedLeaf(j)}
+              onUpdateNested={(k, p) => onUpdateNestedLeaf(j, k, p)}
+              onRemoveNested={(k) => onRemoveNestedLeaf(j, k)}
+            />
           ))}
           <Button
             type="button"
@@ -702,6 +715,173 @@ function OptionCard({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+function LeafCard({
+  leaf,
+  index,
+  t,
+  canRemove,
+  allowNestedSubmenu,
+  onChange,
+  onRemove,
+  onAddNested,
+  onUpdateNested,
+  onRemoveNested,
+}: {
+  leaf: SimpleMenuLeaf;
+  index: number;
+  t: ReturnType<typeof useTranslations>;
+  canRemove: boolean;
+  allowNestedSubmenu: boolean;
+  onChange: (p: Partial<SimpleMenuLeaf>) => void;
+  onRemove: () => void;
+  onAddNested: () => void;
+  onUpdateNested: (k: number, p: Partial<SimpleMenuLeaf>) => void;
+  onRemoveNested: (k: number) => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-card p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">
+          {t("subOptionN", { n: index + 1 })}
+        </span>
+        {canRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <Input
+          value={leaf.title}
+          onChange={(e) => onChange({ title: e.target.value })}
+          placeholder={t("optionTitlePlaceholder")}
+          className="bg-muted"
+        />
+        <CharCount value={leaf.title} max={SIMPLE_MENU_TITLE_MAX} />
+      </div>
+      <ActionPicker
+        value={leaf.action}
+        t={t}
+        includeSubmenu={allowNestedSubmenu}
+        includeEnd
+        onChange={(action) => {
+          const next = action as SimpleLeafAction;
+          onChange({
+            action: next,
+            submenuOptions:
+              next === "submenu"
+                ? leaf.submenuOptions?.length
+                  ? leaf.submenuOptions
+                  : [{ title: "", action: "handoff" }]
+                : leaf.submenuOptions,
+            submenuBody:
+              next === "submenu" ? leaf.submenuBody || "" : leaf.submenuBody,
+          });
+        }}
+      />
+      {leaf.action === "message" && (
+        <Textarea
+          value={leaf.messageText ?? ""}
+          onChange={(e) => onChange({ messageText: e.target.value })}
+          placeholder={t("messagePlaceholder")}
+          rows={2}
+          className="bg-muted"
+        />
+      )}
+      {(leaf.action === "handoff" || leaf.action === "message") && (
+        <Input
+          value={leaf.handoffNote ?? ""}
+          onChange={(e) => onChange({ handoffNote: e.target.value })}
+          placeholder={t("handoffNotePlaceholder")}
+          className="bg-muted"
+        />
+      )}
+      {leaf.action === "submenu" && allowNestedSubmenu && (
+        <div className="space-y-2 rounded-md border border-border/60 bg-muted/40 p-2">
+          <Label>{t("submenuBodyLabel")}</Label>
+          <Textarea
+            value={leaf.submenuBody ?? ""}
+            onChange={(e) => onChange({ submenuBody: e.target.value })}
+            placeholder={t("submenuBodyPlaceholder")}
+            rows={2}
+            className="bg-muted"
+          />
+          {(leaf.submenuOptions ?? []).map((nested, k) => (
+            <LeafCard
+              key={k}
+              leaf={nested}
+              index={k}
+              t={t}
+              canRemove={(leaf.submenuOptions?.length ?? 0) > 1}
+              allowNestedSubmenu={false}
+              onChange={(p) => onUpdateNested(k, p)}
+              onRemove={() => onRemoveNested(k)}
+              onAddNested={() => undefined}
+              onUpdateNested={() => undefined}
+              onRemoveNested={() => undefined}
+            />
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onAddNested}
+            disabled={(leaf.submenuOptions?.length ?? 0) >= 10}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {t("addSubOption")}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActionPicker({
+  value,
+  t,
+  includeSubmenu,
+  includeEnd,
+  onChange,
+}: {
+  value: string;
+  t: ReturnType<typeof useTranslations>;
+  includeSubmenu: boolean;
+  includeEnd: boolean;
+  onChange: (action: string) => void;
+}) {
+  const items: [string, string][] = [
+    ["handoff", t("actionHandoff")],
+    ["message", t("actionMessage")],
+  ];
+  if (includeSubmenu) items.push(["submenu", t("actionSubmenu")]);
+  if (includeEnd) items.push(["end", t("actionEnd")]);
+
+  return (
+    <div className="grid gap-2">
+      {items.map(([action, label]) => (
+        <button
+          key={action}
+          type="button"
+          onClick={() => onChange(action)}
+          className={cn(
+            "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+            value === action
+              ? "border-primary bg-primary/10 font-medium text-foreground"
+              : "border-border bg-muted text-muted-foreground hover:border-primary/40 hover:text-foreground",
+          )}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }

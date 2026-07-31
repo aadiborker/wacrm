@@ -1042,6 +1042,7 @@
       "actionMessage": "메시지 전송 후 인계",
       "actionSubmenu": "다른 메뉴 표시",
       "actionSubmenuWith": "하위 메뉴 ({count}개 선택지)",
+      "actionEnd": "대화 종료",
       "messageLabel": "보낼 메시지",
       "messagePlaceholder": "감사합니다 — 안내드립니다…",
       "handoffNoteLabel": "상담원 메모 (선택)",

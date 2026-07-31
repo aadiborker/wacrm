@@ -1,9 +1,13 @@
 /**
  * Simple Menu builder — turns a short wizard form into a full flow
- * graph (start → list menus → message/handoff → end).
+ * graph (start → list menus → message/handoff/end).
  *
  * Keeps Meta limits in mind (≤10 list rows, ≤24 char titles) so the
  * wizard can validate before we hit the Cloud API.
+ *
+ * Nesting: main option → submenu → optional nested submenu (max 2
+ * menu levels under the main list). Deeper "Show another menu" is
+ * blocked in validation.
  */
 
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
@@ -16,7 +20,8 @@ import type {
 } from "./types";
 import type { FlowTemplateNode } from "./templates";
 
-export type SimpleLeafAction = "handoff" | "message";
+/** Actions available on submenu / nested choices. */
+export type SimpleLeafAction = "handoff" | "message" | "submenu" | "end";
 
 export interface SimpleMenuLeaf {
   title: string;
@@ -25,9 +30,16 @@ export interface SimpleMenuLeaf {
   messageText?: string;
   /** Internal note on the handoff node (agents see this in the run). */
   handoffNote?: string;
+  /** Body for a nested list when action=submenu. */
+  submenuBody?: string;
+  submenuOptions?: SimpleMenuLeaf[];
 }
 
-export type SimpleMenuOptionAction = "handoff" | "message" | "submenu";
+export type SimpleMenuOptionAction =
+  | "handoff"
+  | "message"
+  | "submenu"
+  | "end";
 
 export interface SimpleMenuOption {
   title: string;
@@ -65,6 +77,8 @@ export interface SimpleMenuIssue {
 const ROW_MAX = INTERACTIVE_LIMITS.listRowTitleMaxLength;
 const BUTTON_LABEL_MAX = 20;
 const BODY_MAX = INTERACTIVE_LIMITS.bodyMaxLength;
+/** Main list → submenu → nested submenu. No deeper. */
+export const SIMPLE_MENU_MAX_NEST = 2;
 
 function trim(s: string | undefined): string {
   return (s ?? "").trim();
@@ -77,6 +91,71 @@ function slugReplyId(prefix: string, title: string, index: number): string {
     .replace(/^_|_$/g, "")
     .slice(0, 40);
   return `${prefix}_${index}_${base || "opt"}`.slice(0, 200);
+}
+
+function validateLeaves(
+  leaves: SimpleMenuLeaf[],
+  fieldPrefix: string,
+  nestDepth: number,
+  issues: SimpleMenuIssue[],
+): void {
+  if (leaves.length < 1) {
+    issues.push({
+      field: fieldPrefix,
+      message: "Add at least one menu choice.",
+    });
+  }
+  if (leaves.length > INTERACTIVE_LIMITS.maxListRowsTotal) {
+    issues.push({
+      field: fieldPrefix,
+      message: `Menu supports at most ${INTERACTIVE_LIMITS.maxListRowsTotal} choices.`,
+    });
+  }
+
+  leaves.forEach((leaf, j) => {
+    const lt = trim(leaf.title);
+    const lp = `${fieldPrefix}.${j}`;
+    if (!lt) {
+      issues.push({
+        field: `${lp}.title`,
+        message: `Choice ${j + 1} needs a title.`,
+      });
+    } else if (lt.length > ROW_MAX) {
+      issues.push({
+        field: `${lp}.title`,
+        message: `Choice title must be ≤ ${ROW_MAX} characters.`,
+      });
+    }
+
+    if (leaf.action === "message" && !trim(leaf.messageText)) {
+      issues.push({
+        field: `${lp}.messageText`,
+        message: `Choice ${j + 1}: add a message, or pick another action.`,
+      });
+    }
+
+    if (leaf.action === "submenu") {
+      if (nestDepth >= SIMPLE_MENU_MAX_NEST) {
+        issues.push({
+          field: `${lp}.action`,
+          message: `Choice ${j + 1}: nesting limit reached — use Hand off, Send a message, or End.`,
+        });
+        return;
+      }
+      if (!trim(leaf.submenuBody)) {
+        issues.push({
+          field: `${lp}.submenuBody`,
+          message: `Choice ${j + 1}: add a question for the next menu.`,
+        });
+      }
+      validateLeaves(
+        leaf.submenuOptions ?? [],
+        `${lp}.submenuOptions`,
+        nestDepth + 1,
+        issues,
+      );
+    }
+  });
 }
 
 export function validateSimpleMenuSpec(spec: SimpleMenuSpec): SimpleMenuIssue[] {
@@ -143,46 +222,18 @@ export function validateSimpleMenuSpec(spec: SimpleMenuSpec): SimpleMenuIssue[] 
       });
     }
     if (opt.action === "submenu") {
-      const subs = opt.submenuOptions ?? [];
       if (!trim(opt.submenuBody)) {
         issues.push({
           field: `${prefix}.submenuBody`,
           message: `Option ${i + 1}: add a question for the submenu.`,
         });
       }
-      if (subs.length < 1) {
-        issues.push({
-          field: `${prefix}.submenuOptions`,
-          message: `Option ${i + 1}: add at least one submenu choice.`,
-        });
-      }
-      if (subs.length > INTERACTIVE_LIMITS.maxListRowsTotal) {
-        issues.push({
-          field: `${prefix}.submenuOptions`,
-          message: `Option ${i + 1}: submenu supports at most ${INTERACTIVE_LIMITS.maxListRowsTotal} choices.`,
-        });
-      }
-      subs.forEach((leaf, j) => {
-        const lt = trim(leaf.title);
-        const lp = `${prefix}.submenuOptions.${j}`;
-        if (!lt) {
-          issues.push({
-            field: `${lp}.title`,
-            message: `Sub-option ${j + 1} under option ${i + 1} needs a title.`,
-          });
-        } else if (lt.length > ROW_MAX) {
-          issues.push({
-            field: `${lp}.title`,
-            message: `Sub-option title must be ≤ ${ROW_MAX} characters.`,
-          });
-        }
-        if (leaf.action === "message" && !trim(leaf.messageText)) {
-          issues.push({
-            field: `${lp}.messageText`,
-            message: `Sub-option ${j + 1}: add a message or choose Hand off.`,
-          });
-        }
-      });
+      validateLeaves(
+        opt.submenuOptions ?? [],
+        `${prefix}.submenuOptions`,
+        1,
+        issues,
+      );
     }
   });
 
@@ -218,6 +269,73 @@ function handoffNode(node_key: string, note: string): FlowTemplateNode {
 }
 
 /**
+ * Emit nodes for a leaf choice; returns the node_key the parent row
+ * should point at. `keyBase` must be unique across the flow.
+ */
+function emitLeaf(
+  nodes: FlowTemplateNode[],
+  leaf: SimpleMenuLeaf,
+  keyBase: string,
+  replyPrefix: string,
+  buttonLabel: string,
+  nestDepth: number,
+  needsEnd: { value: boolean },
+): string {
+  const lt = trim(leaf.title);
+
+  if (leaf.action === "end") {
+    needsEnd.value = true;
+    return "end";
+  }
+
+  if (leaf.action === "handoff") {
+    const hk = `handoff_${keyBase}`;
+    nodes.push(
+      handoffNode(hk, trim(leaf.handoffNote) || `Customer chose: ${lt}`),
+    );
+    return hk;
+  }
+
+  if (leaf.action === "message") {
+    const mk = `msg_${keyBase}`;
+    const hk = `handoff_${keyBase}`;
+    nodes.push(messageNode(mk, trim(leaf.messageText)!, hk));
+    nodes.push(
+      handoffNode(hk, trim(leaf.handoffNote) || `Follow-up after: ${lt}`),
+    );
+    return mk;
+  }
+
+  // submenu
+  const subKey = `menu_${keyBase}`;
+  const subBody =
+    trim(leaf.submenuBody) || `You chose “${lt}”. What next?`;
+  const subRows: Array<{
+    reply_id: string;
+    title: string;
+    next_node_key: string;
+  }> = [];
+
+  (leaf.submenuOptions ?? []).forEach((child, j) => {
+    const ct = trim(child.title);
+    const childReply = slugReplyId(replyPrefix, ct, j);
+    const next = emitLeaf(
+      nodes,
+      child,
+      `${keyBase}_${j}`,
+      `${replyPrefix}${j}`,
+      buttonLabel,
+      nestDepth + 1,
+      needsEnd,
+    );
+    subRows.push({ reply_id: childReply, title: ct, next_node_key: next });
+  });
+
+  nodes.push(listNode(subKey, subBody, buttonLabel, subRows));
+  return subKey;
+}
+
+/**
  * Compile a wizard spec into flow nodes. Caller must validate first
  * (or rely on validateSimpleMenuSpec). Throws if invalid.
  */
@@ -232,16 +350,12 @@ export function buildSimpleMenuFlow(spec: SimpleMenuSpec): BuiltSimpleMenuFlow {
   const welcomeText = trim(spec.welcomeText);
   const buttonLabel = trim(spec.buttonLabel) || "View options";
   const nodes: FlowTemplateNode[] = [];
+  const needsEnd = { value: false };
 
   nodes.push({
     node_key: "start",
     node_type: "start",
     config: { next_node_key: "menu_main" } satisfies StartNodeConfig,
-  });
-  nodes.push({
-    node_key: "end",
-    node_type: "end",
-    config: {},
   });
 
   const mainRows: Array<{
@@ -254,6 +368,12 @@ export function buildSimpleMenuFlow(spec: SimpleMenuSpec): BuiltSimpleMenuFlow {
     const title = trim(opt.title);
     const reply_id = slugReplyId("main", title, i);
 
+    if (opt.action === "end") {
+      needsEnd.value = true;
+      mainRows.push({ reply_id, title, next_node_key: "end" });
+      return;
+    }
+
     if (opt.action === "handoff") {
       const key = `handoff_${i}`;
       nodes.push(
@@ -262,7 +382,6 @@ export function buildSimpleMenuFlow(spec: SimpleMenuSpec): BuiltSimpleMenuFlow {
           trim(opt.handoffNote) || `Customer chose: ${title}`,
         ),
       );
-      // Engine ends handoff by completing the run; no next needed.
       mainRows.push({ reply_id, title, next_node_key: key });
       return;
     }
@@ -281,41 +400,23 @@ export function buildSimpleMenuFlow(spec: SimpleMenuSpec): BuiltSimpleMenuFlow {
       return;
     }
 
-    // submenu
-    const subKey = `menu_sub_${i}`;
-    const subBody =
-      trim(opt.submenuBody) || `You chose “${title}”. What next?`;
-    const subRows: Array<{
-      reply_id: string;
-      title: string;
-      next_node_key: string;
-    }> = [];
-
-    (opt.submenuOptions ?? []).forEach((leaf, j) => {
-      const lt = trim(leaf.title);
-      const leafReply = slugReplyId(`sub${i}`, lt, j);
-      if (leaf.action === "handoff") {
-        const hk = `handoff_${i}_${j}`;
-        nodes.push(
-          handoffNode(hk, trim(leaf.handoffNote) || `Customer chose: ${lt}`),
-        );
-        subRows.push({ reply_id: leafReply, title: lt, next_node_key: hk });
-      } else {
-        const mk = `msg_${i}_${j}`;
-        const hk = `handoff_${i}_${j}`;
-        nodes.push(messageNode(mk, trim(leaf.messageText)!, hk));
-        nodes.push(
-          handoffNode(
-            hk,
-            trim(leaf.handoffNote) || `Follow-up after: ${lt}`,
-          ),
-        );
-        subRows.push({ reply_id: leafReply, title: lt, next_node_key: mk });
-      }
-    });
-
-    nodes.push(listNode(subKey, subBody, buttonLabel, subRows));
-    mainRows.push({ reply_id, title, next_node_key: subKey });
+    // submenu under main option
+    const asLeaf: SimpleMenuLeaf = {
+      title,
+      action: "submenu",
+      submenuBody: opt.submenuBody,
+      submenuOptions: opt.submenuOptions,
+    };
+    const next = emitLeaf(
+      nodes,
+      asLeaf,
+      `sub_${i}`,
+      `sub${i}`,
+      buttonLabel,
+      1,
+      needsEnd,
+    );
+    mainRows.push({ reply_id, title, next_node_key: next });
   });
 
   nodes.splice(
@@ -323,6 +424,14 @@ export function buildSimpleMenuFlow(spec: SimpleMenuSpec): BuiltSimpleMenuFlow {
     0,
     listNode("menu_main", welcomeText, buttonLabel, mainRows),
   );
+
+  if (needsEnd.value) {
+    nodes.push({
+      node_key: "end",
+      node_type: "end",
+      config: {},
+    });
+  }
 
   return {
     name,
@@ -353,4 +462,7 @@ export function blankSimpleMenuSpec(): SimpleMenuSpec {
   };
 }
 
-export { ROW_MAX as SIMPLE_MENU_TITLE_MAX, BUTTON_LABEL_MAX as SIMPLE_MENU_BUTTON_LABEL_MAX };
+export {
+  ROW_MAX as SIMPLE_MENU_TITLE_MAX,
+  BUTTON_LABEL_MAX as SIMPLE_MENU_BUTTON_LABEL_MAX,
+};
