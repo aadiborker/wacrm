@@ -10,6 +10,7 @@ import {
   Plus,
   Trash2,
   Sparkles,
+  Save,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -27,6 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   blankSimpleMenuSpec,
+  buildSimpleMenuFlow,
   SIMPLE_MENU_BUTTON_LABEL_MAX,
   SIMPLE_MENU_TITLE_MAX,
   validateSimpleMenuSpec,
@@ -59,12 +61,104 @@ export function SimpleMenuWizard() {
   const [step, setStep] = useState<Step>(1);
   const [spec, setSpec] = useState<SimpleMenuSpec>(() => blankSimpleMenuSpec());
   const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [activate, setActivate] = useState(true);
+  /** Set after first Save draft — further saves update this flow. */
+  const [flowId, setFlowId] = useState<string | null>(null);
 
   const issues = useMemo(() => validateSimpleMenuSpec(spec), [spec]);
+  const busy = creating || saving;
 
   function patch(p: Partial<SimpleMenuSpec>) {
     setSpec((s) => ({ ...s, ...p }));
+  }
+
+  async function persistDraft(): Promise<string> {
+    if (issues.length > 0) {
+      throw new Error(issues[0]!.message);
+    }
+
+    if (flowId) {
+      const built = buildSimpleMenuFlow(spec);
+      const res = await fetch(`/api/flows/${flowId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: built.name,
+          description: built.description,
+          trigger_type: built.trigger_type,
+          trigger_config: built.trigger_config,
+          entry_node_id: built.entry_node_id,
+          nodes: built.nodes,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error ?? `Save failed: ${res.status}`);
+      }
+      return flowId;
+    }
+
+    const res = await fetch("/api/flows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ simple_menu: spec, activate: false }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(json.error ?? `Save failed: ${res.status}`);
+    }
+    const id = json.flow?.id as string | undefined;
+    if (!id) throw new Error(t("createError"));
+    setFlowId(id);
+    return id;
+  }
+
+  async function handleSaveDraft() {
+    if (issues.length > 0) {
+      toast.error(issues[0]!.message);
+      return;
+    }
+    setSaving(true);
+    try {
+      await persistDraft();
+      toast.success(t("savedDraft"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("saveError"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCreate() {
+    if (issues.length > 0) {
+      toast.error(issues[0]!.message);
+      return;
+    }
+    setCreating(true);
+    try {
+      const id = await persistDraft();
+
+      if (activate) {
+        const res = await fetch(`/api/flows/${id}/activate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "active" }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(json.error ?? `Activate failed: ${res.status}`);
+        }
+        toast.success(t("createdActive"));
+      } else {
+        toast.success(t("createdDraft"));
+      }
+      router.push(`/flows/${id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("createError"));
+    } finally {
+      setCreating(false);
+    }
   }
 
   function updateOption(index: number, patchOpt: Partial<SimpleMenuOption>) {
@@ -166,39 +260,6 @@ export function SimpleMenuWizard() {
     return issues.length === 0;
   }
 
-  async function handleCreate() {
-    if (issues.length > 0) {
-      toast.error(issues[0]!.message);
-      return;
-    }
-    setCreating(true);
-    try {
-      const res = await fetch("/api/flows", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ simple_menu: spec, activate }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.error ?? `Create failed: ${res.status}`);
-      }
-      const flowId = json.flow?.id as string | undefined;
-      if (activate && !json.activateSkipped) {
-        toast.success(t("createdActive"));
-      } else if (json.activateSkipped) {
-        toast.message(t("createdDraftActivateSkipped"));
-      } else {
-        toast.success(t("createdDraft"));
-      }
-      if (flowId) router.push(`/flows/${flowId}`);
-      else router.push("/flows");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("createError"));
-    } finally {
-      setCreating(false);
-    }
-  }
-
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
       <div className="flex items-start gap-3">
@@ -216,6 +277,11 @@ export function SimpleMenuWizard() {
             <h1 className="text-2xl font-semibold text-foreground">
               {t("title")}
             </h1>
+            {flowId && (
+              <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("draftSavedBadge")}
+              </span>
+            )}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{t("subtitle")}</p>
         </div>
@@ -386,35 +452,53 @@ export function SimpleMenuWizard() {
         </section>
       )}
 
-      <div className="flex justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Button
           type="button"
           variant="ghost"
-          disabled={step === 1 || creating}
+          disabled={step === 1 || busy}
           onClick={() => setStep((s) => (s === 1 ? 1 : ((s - 1) as Step)))}
         >
           <ArrowLeft className="h-4 w-4" />
           {t("back")}
         </Button>
-        {step < 3 ? (
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
-            disabled={!canGoNext()}
-            onClick={() => setStep((s) => (s + 1) as Step)}
+            variant="outline"
+            disabled={busy || issues.length > 0}
+            title={
+              issues.length > 0 ? issues[0]!.message : t("saveDraftHint")
+            }
+            onClick={() => void handleSaveDraft()}
           >
-            {t("next")}
-            <ArrowRight className="h-4 w-4" />
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {t("saveDraft")}
           </Button>
-        ) : (
-          <Button
-            type="button"
-            disabled={creating || issues.length > 0}
-            onClick={() => void handleCreate()}
-          >
-            {creating && <Loader2 className="h-4 w-4 animate-spin" />}
-            {activate ? t("createActivate") : t("createDraft")}
-          </Button>
-        )}
+          {step < 3 ? (
+            <Button
+              type="button"
+              disabled={!canGoNext() || busy}
+              onClick={() => setStep((s) => (s + 1) as Step)}
+            >
+              {t("next")}
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              disabled={busy || issues.length > 0}
+              onClick={() => void handleCreate()}
+            >
+              {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+              {activate ? t("createActivate") : t("createDraft")}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
