@@ -212,7 +212,7 @@ export function FlowsList({ initialFlows, initialTemplates }: Props) {
                 type="button"
                 onClick={() => {
                   setCreateOpen(false);
-                  router.push("/flows/new/simple");
+                  router.push("/flows/simple-menu");
                 }}
                 disabled={creating}
                 className="flex w-full flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-4 text-left transition-colors hover:bg-primary/10 disabled:opacity-50"
