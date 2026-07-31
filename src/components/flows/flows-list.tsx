@@ -192,90 +192,94 @@ export function FlowsList({ initialFlows, initialTemplates }: Props) {
         {/* `sm:max-w-4xl` not `max-w-4xl` — shadcn's DialogContent has
             `sm:max-w-sm` baked into its default classes. Without the
             sm: prefix our override applies at base only and the
-            sm-scoped 384px wins at every real desktop breakpoint. */}
-        <DialogContent className="sm:max-w-4xl bg-popover text-popover-foreground">
-          <DialogHeader>
+            sm-scoped 384px wins at every real desktop breakpoint.
+            Cap height + scroll the body so simple-menu + templates
+            don't clip off short viewports. */}
+        <DialogContent className="flex max-h-[min(90dvh,calc(100vh-2rem))] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl bg-popover text-popover-foreground">
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-4 pb-3 pt-4 pr-12">
             <DialogTitle>{t("createTitle")}</DialogTitle>
             <DialogDescription className="text-muted-foreground">
               {t("createDesc")}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {t("startSimple")}
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setCreateOpen(false);
-                router.push("/flows/new/simple");
-              }}
-              disabled={creating}
-              className="flex w-full flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-4 text-left transition-colors hover:bg-primary/10 disabled:opacity-50"
-            >
-              <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <Sparkles className="h-4 w-4 text-primary" />
-                {t("simpleMenuTitle")}
-              </span>
-              <span className="text-xs leading-relaxed text-muted-foreground">
-                {t("simpleMenuDesc")}
-              </span>
-              <span className="text-xs font-medium text-primary">
-                {t("simpleMenuCta")} →
-              </span>
-            </button>
-          </div>
-
-          {templates.length > 0 && (
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4">
             <div className="space-y-3">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                {t("startTemplate")}
+                {t("startSimple")}
               </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {templates.map((template) => {
-                  const Icon = TEMPLATE_ICONS[template.icon] ?? FileText;
-                  return (
-                    <button
-                      key={template.slug}
-                      type="button"
-                      onClick={() => handleUseTemplate(template.slug)}
-                      disabled={creating}
-                      className="flex flex-col gap-2.5 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted disabled:opacity-50"
-                    >
-                      <Icon className="h-5 w-5 text-primary" />
-                      <span className="text-sm font-semibold text-popover-foreground">
-                        {template.name}
-                      </span>
-                      <span className="text-xs leading-relaxed text-muted-foreground">
-                        {template.description}
-                      </span>
-                      <span className="mt-auto border-t border-border pt-2 text-[11px] text-muted-foreground">
-                        {t("nodeCount", { count: template.node_count })}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCreateOpen(false);
+                  router.push("/flows/new/simple");
+                }}
+                disabled={creating}
+                className="flex w-full flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-4 text-left transition-colors hover:bg-primary/10 disabled:opacity-50"
+              >
+                <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  {t("simpleMenuTitle")}
+                </span>
+                <span className="text-xs leading-relaxed text-muted-foreground">
+                  {t("simpleMenuDesc")}
+                </span>
+                <span className="text-xs font-medium text-primary">
+                  {t("simpleMenuCta")} →
+                </span>
+              </button>
             </div>
-          )}
 
-          <div className="space-y-2 border-t border-border pt-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {t("startBlank")}
-            </p>
-            <Input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder={t("placeholderName")}
-              className="bg-muted"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleCreate();
-              }}
-            />
+            {templates.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {t("startTemplate")}
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {templates.map((template) => {
+                    const Icon = TEMPLATE_ICONS[template.icon] ?? FileText;
+                    return (
+                      <button
+                        key={template.slug}
+                        type="button"
+                        onClick={() => handleUseTemplate(template.slug)}
+                        disabled={creating}
+                        className="flex flex-col gap-2.5 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted disabled:opacity-50"
+                      >
+                        <Icon className="h-5 w-5 text-primary" />
+                        <span className="text-sm font-semibold text-popover-foreground">
+                          {template.name}
+                        </span>
+                        <span className="text-xs leading-relaxed text-muted-foreground">
+                          {template.description}
+                        </span>
+                        <span className="mt-auto border-t border-border pt-2 text-[11px] text-muted-foreground">
+                          {t("nodeCount", { count: template.node_count })}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2 border-t border-border pt-4">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t("startBlank")}
+              </p>
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder={t("placeholderName")}
+                className="bg-muted"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreate();
+                }}
+              />
+            </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none border-border">
             <Button
               variant="ghost"
               onClick={() => setCreateOpen(false)}
