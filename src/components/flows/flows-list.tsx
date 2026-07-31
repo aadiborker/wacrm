@@ -36,6 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { FlowRow } from "@/lib/flows/types";
 import type { FlowTemplateSummary } from "@/lib/flows/templates";
+import { getSimpleMenuSpecFromFlow } from "@/lib/flows/simple-menu";
 
 /**
  * Flows list UI. Receives initial rows + template summaries from the
@@ -180,7 +181,13 @@ export function FlowsList({ initialFlows, initialTemplates }: Props) {
             <FlowCard
               key={flow.id}
               flow={flow}
-              onEdit={() => router.push(`/flows/${flow.id}`)}
+              onEdit={() =>
+                router.push(
+                  getSimpleMenuSpecFromFlow(flow)
+                    ? `/flows/simple-menu/${flow.id}`
+                    : `/flows/${flow.id}`,
+                )
+              }
               onDelete={() => handleDelete(flow)}
               t={t}
             />

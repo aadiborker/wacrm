@@ -49,16 +49,27 @@ function CharCount({ value, max }: { value: string; max: number }) {
   );
 }
 
-export function SimpleMenuWizard() {
+export function SimpleMenuWizard({
+  existingFlowId = null,
+  initialSpec,
+  initialActivate = true,
+}: {
+  /** When set, saves update this flow instead of creating a new one. */
+  existingFlowId?: string | null;
+  initialSpec?: SimpleMenuSpec;
+  initialActivate?: boolean;
+} = {}) {
   const router = useRouter();
   const t = useTranslations("Flows.simpleMenu");
   const [step, setStep] = useState<Step>(1);
-  const [spec, setSpec] = useState<SimpleMenuSpec>(() => blankSimpleMenuSpec());
+  const [spec, setSpec] = useState<SimpleMenuSpec>(
+    () => initialSpec ?? blankSimpleMenuSpec(),
+  );
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [activate, setActivate] = useState(true);
+  const [activate, setActivate] = useState(initialActivate);
   /** Set after first Save draft — further saves update this flow. */
-  const [flowId, setFlowId] = useState<string | null>(null);
+  const [flowId, setFlowId] = useState<string | null>(existingFlowId);
 
   const issues = useMemo(() => validateSimpleMenuSpec(spec), [spec]);
   const busy = creating || saving;
@@ -147,7 +158,9 @@ export function SimpleMenuWizard() {
       } else {
         toast.success(t("createdDraft"));
       }
-      router.push(`/flows/${id}`);
+      // Stay in the simple-menu world — don't dump users on the node canvas.
+      router.push("/flows");
+      router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("createError"));
     } finally {

@@ -64,7 +64,10 @@ export interface BuiltSimpleMenuFlow {
   name: string;
   description: string;
   trigger_type: "keyword";
-  trigger_config: KeywordTriggerConfig;
+  trigger_config: KeywordTriggerConfig & {
+    /** Wizard form state — used to reopen Simple Menu editor (not used by the runner). */
+    simple_menu_spec?: SimpleMenuSpec;
+  };
   entry_node_id: string;
   nodes: FlowTemplateNode[];
 }
@@ -440,9 +443,49 @@ export function buildSimpleMenuFlow(spec: SimpleMenuSpec): BuiltSimpleMenuFlow {
     trigger_config: {
       keywords: [keyword],
       match_type: "contains",
+      // Keep the wizard form so Edit opens Simple Menu, not the canvas.
+      simple_menu_spec: {
+        name: trim(spec.name),
+        keyword: trim(spec.keyword),
+        welcomeText: trim(spec.welcomeText),
+        buttonLabel: trim(spec.buttonLabel) || "View options",
+        options: spec.options,
+      },
     },
     entry_node_id: "start",
     nodes,
+  };
+}
+
+/** True when this flow was created/saved via the Simple Menu wizard. */
+export function isSimpleMenuFlow(flow: {
+  trigger_config?: object | null;
+  description?: string | null;
+}): boolean {
+  const cfg = (flow.trigger_config ?? {}) as Record<string, unknown>;
+  if (cfg.simple_menu_spec && typeof cfg.simple_menu_spec === "object") {
+    return true;
+  }
+  // Legacy drafts from before we stored the spec.
+  return (flow.description ?? "").startsWith("Simple menu —");
+}
+
+export function getSimpleMenuSpecFromFlow(flow: {
+  trigger_config?: object | null;
+}): SimpleMenuSpec | null {
+  const cfg = (flow.trigger_config ?? {}) as Record<string, unknown>;
+  const raw = cfg.simple_menu_spec;
+  if (!raw || typeof raw !== "object") return null;
+  const s = raw as Partial<SimpleMenuSpec>;
+  if (typeof s.name !== "string" || typeof s.keyword !== "string") return null;
+  if (typeof s.welcomeText !== "string" || !Array.isArray(s.options)) return null;
+  return {
+    name: s.name,
+    keyword: s.keyword,
+    welcomeText: s.welcomeText,
+    buttonLabel:
+      typeof s.buttonLabel === "string" ? s.buttonLabel : "View options",
+    options: s.options as SimpleMenuSpec["options"],
   };
 }
 

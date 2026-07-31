@@ -1068,7 +1068,9 @@
       "createdActive": "Menu created and activated.",
       "createdDraft": "Menu created as draft.",
       "createdDraftActivateSkipped": "Menu created as draft — fix issues in the editor before activating.",
-      "createError": "Couldn't create menu."
+      "createError": "Couldn't create menu.",
+      "loadError": "Couldn't load this menu.",
+      "editNeedsCanvas": "This menu was saved before Simple Menu editing was available — opening the canvas."
     },
     "edit": {
       "notFound": "Flow not found.",

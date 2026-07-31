@@ -1068,7 +1068,9 @@
       "createdActive": "메뉴가 만들어지고 활성화되었습니다.",
       "createdDraft": "메뉴가 초안으로 만들어졌습니다.",
       "createdDraftActivateSkipped": "초안으로 저장됨 — 에디터에서 문제를 고친 뒤 활성화하세요.",
-      "createError": "메뉴를 만들 수 없습니다."
+      "createError": "메뉴를 만들 수 없습니다.",
+      "loadError": "메뉴를 불러올 수 없습니다.",
+      "editNeedsCanvas": "이 메뉴는 간단 메뉴 편집이 추가되기 전에 저장되어 캔버스로 엽니다."
     },
     "edit": {
       "notFound": "플로우를 찾을 수 없습니다.",
