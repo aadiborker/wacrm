@@ -2,9 +2,9 @@
 
 /**
  * Canvas / mind-map view of a flow. Editable, in parity with the
- * list view for everything except the trigger / header / fallback
- * panels (those are list-only — they don't fit visually inside a
- * node graph and the user can switch to List for them).
+ * list view for everything except the header / fallback panels
+ * (those are list-only — they don't fit visually inside a node
+ * graph). Flow triggers are editable on the Start node sheet here.
  *
  * What this view does:
  *   - Renders every flow_node as a draggable tile, pan + zoom +
@@ -14,7 +14,9 @@
  *     "true" / "false", list row title) so a branching flow reads
  *     as a real decision tree.
  *   - Click a node → side-sheet opens with the same per-node form
- *     the list view uses, plus "Set as entry" / "Delete".
+ *     the list view uses, plus "Set as entry" / "Delete". Start nodes
+ *     also expose the flow-level trigger (keywords / first inbound /
+ *     manual) so canvas users don't need List view for that.
  *   - Drag from a source handle on one node to a target handle on
  *     another → wires that slot's `next_node_key`. Per-slot handles
  *     for multi-outgoing types (condition, send_buttons, send_list)
@@ -24,6 +26,10 @@
  *   - Delete on a selected edge → clears just that slot.
  *   - "+ Add node" floating button drops a new node at the visible
  *     viewport center.
+ *   - Expand uses a CSS fixed overlay (not the browser Fullscreen
+ *     API) so dropdowns / sheets / file pickers keep working — those
+ *     portal to document.body and are invisible under native
+ *     fullscreen.
  *   - Runs dagre auto-layout once on mount for flows whose
  *     `position_x` / `position_y` are all zero (pre-canvas flows
  *     and brand-new flows) — otherwise everything would pile at
@@ -98,6 +104,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useFlowEditor } from './flow-editor-state';
 import { NodeConfigForm } from './forms/node-config-form';
+import { FlowTriggerFields } from './forms/flow-trigger-fields';
 
 // React-Flow node `data` payload — the bits our custom renderer needs.
 interface NodeData extends Record<string, unknown> {
@@ -291,38 +298,37 @@ function FlowCanvasInner() {
   const canvasRootRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Keep the control icon in sync when the user hits Esc to leave
-  // fullscreen (browser fires fullscreenchange, not our button).
+  // CSS overlay expand (not document.requestFullscreen) so menus and
+  // the node sheet — which portal to <body> — stay visible and clickable.
   useEffect(() => {
-    const sync = () => {
-      setIsFullscreen(document.fullscreenElement === canvasRootRef.current);
+    if (!isFullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsFullscreen(false);
     };
-    document.addEventListener('fullscreenchange', sync);
-    return () => document.removeEventListener('fullscreenchange', sync);
-  }, []);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isFullscreen]);
 
-  const toggleFullscreen = useCallback(async () => {
-    const el = canvasRootRef.current;
-    if (!el) return;
-    try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-        return;
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen((prev) => {
+      const next = !prev;
+      if (next) {
+        window.setTimeout(() => {
+          void reactFlow.fitView({
+            padding: 0.18,
+            minZoom: 0.45,
+            maxZoom: 1.25,
+            duration: 200,
+          });
+        }, 120);
       }
-      await el.requestFullscreen();
-      // Frame the whole flow once the stage fills the screen — makes
-      // screenshots / downloads cleaner.
-      window.setTimeout(() => {
-        void reactFlow.fitView({
-          padding: 0.18,
-          minZoom: 0.45,
-          maxZoom: 1.25,
-          duration: 200,
-        });
-      }, 120);
-    } catch (err) {
-      console.error('Fullscreen failed', err);
-    }
+      return next;
+    });
   }, [reactFlow]);
 
   // Side-panel state — which node's form is open. Canvas-only UI; the
@@ -586,9 +592,13 @@ function FlowCanvasInner() {
     <>
       <div
         ref={canvasRootRef}
-        className="h-full w-full overflow-hidden bg-[var(--card-2,var(--background))]"
+        className={cn(
+          'h-full w-full overflow-hidden bg-[var(--card-2,var(--background))]',
+          isFullscreen && 'fixed inset-0 z-50'
+        )}
       >
         <ReactFlow
+          className="h-full w-full"
           nodes={rfNodes}
           edges={rfEdges}
           nodeTypes={NODE_TYPES}
@@ -620,12 +630,17 @@ function FlowCanvasInner() {
             color="var(--border)"
           />
           <Controls
-            className="!border-border !bg-card [&_button]:!border-border [&_button]:!bg-card [&_button:hover]:!bg-muted [&_button_svg]:!fill-foreground !overflow-hidden !rounded-xl !border !shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)]"
+            position="bottom-left"
+            // Inline inset beats Tailwind↔React-Flow class clashes on
+            // bare `.bottom` / `.left` (Tailwind v4) so zoom/expand
+            // stay pinned to the corner as nodes are added.
+            style={{ top: 'auto', right: 'auto', bottom: 16, left: 16 }}
+            className="!border-border !bg-card [&_button]:!border-border [&_button]:!bg-card [&_button:hover]:!bg-muted [&_button_svg]:!fill-foreground !m-0 !overflow-hidden !rounded-xl !border !shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)]"
             showInteractive={false}
             showFitView={false}
           >
             <ControlButton
-              onClick={() => void toggleFullscreen()}
+              onClick={() => toggleFullscreen()}
               title={
                 isFullscreen ? t('exitFullscreen') : t('enterFullscreen')
               }
@@ -643,15 +658,21 @@ function FlowCanvasInner() {
           <MiniMap
             pannable
             zoomable
+            position="bottom-right"
+            style={{ top: 'auto', left: 'auto', bottom: 16, right: 16 }}
             nodeColor={(n) =>
               nodeColors((n.data as NodeData).node.node_type).solid
             }
             nodeStrokeWidth={0}
             nodeBorderRadius={3}
             maskColor="color-mix(in oklch, var(--background) 70%, transparent)"
-            className="!border-border !bg-card !rounded-xl !border !shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)]"
+            className="!border-border !bg-card !m-0 !rounded-xl !border !shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)]"
           />
-          <Panel position="top-left" className="!top-4 !left-4">
+          <Panel
+            position="top-left"
+            style={{ top: 16, left: 16, bottom: 'auto', right: 'auto' }}
+            className="!m-0 !z-10"
+          >
             <CanvasAddNodeButton t={t} />
           </Panel>
         </ReactFlow>
@@ -735,6 +756,9 @@ function NodeEditSheet({
         </SheetHeader>
 
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+          {node.node_type === 'start' && (
+            <FlowTriggerFields className="border-border mb-1 rounded-lg border bg-muted/40 p-3" />
+          )}
           <NodeConfigForm
             node={node}
             allNodes={allNodes}

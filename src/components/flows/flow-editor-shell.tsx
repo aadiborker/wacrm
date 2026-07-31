@@ -4,32 +4,27 @@
  * View-switcher + chrome for the flow editor.
  *
  * Lays the editor out as one app-like column that fills the dashboard
- * content area (toolbar → mode row → stage → validation bar), matching
- * the Flow Builder design handoff:
- *   - A segmented Canvas / List control on the left of the mode row.
- *   - A node-type legend on the right so the canvas's per-type colors
- *     are decodable at a glance.
- *   - The active view is mounted inside a rounded "stage" that owns its
- *     own scroll/overflow, so the canvas can fill available height and
- *     the list scrolls internally.
+ * content area (toolbar → mode row → stage), matching the Flow Builder
+ * design handoff:
+ *   - Segmented Canvas / List / Errors control on the mode row.
+ *   - Errors is a dedicated view (with live counts) so validation never
+ *     eats the canvas or list stage.
+ *   - A node-type legend on the right (canvas/list only).
+ *   - The active view fills the stage; list and errors scroll internally.
  *
- * Why a separate component:
- *   - The page itself stays trivially small (loading + error + this).
- *   - Either view can stay unaware of the other — they share data
- *     (`{flow, nodes}`) and nothing else.
- *
- * View choice persists per-browser via localStorage so a power user
- * who prefers the list isn't fighting the default on every load.
- * Canvas is the default for everyone else — the original user
- * feedback was that the list shape made flows "hard to understand".
+ * View choice (canvas | list) persists per-browser via localStorage.
+ * Errors is not persisted — refresh lands back on canvas/list.
  */
 
 import { useEffect, useState } from "react";
-import { GitFork, List } from "lucide-react";
+import { CircleAlert, CircleCheck, GitFork, List } from "lucide-react";
 
 import { FlowBuilder } from "./flow-builder";
 import { FlowCanvas } from "./flow-canvas";
-import { FlowEditorProvider } from "./flow-editor-state";
+import {
+  FlowEditorProvider,
+  useFlowEditor,
+} from "./flow-editor-state";
 import { EditorHeader } from "./header";
 import { ValidationPanel } from "./validation-panel";
 import { NODE_META, nodeColors, type NodeType } from "./shared";
@@ -38,20 +33,15 @@ import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
 import { useTranslations } from "next-intl";
 
 /**
- * Below this viewport width we force list view and hide the toggle.
- * Canvas with drag-to-connect on a phone is unusable — handles are
- * ~10px and live finger drags from one node to another aren't a
- * practical workflow. Matches Tailwind's `md` breakpoint.
+ * Below this viewport width we force list (not canvas). Errors stays
+ * available. Matches Tailwind's `md` breakpoint.
  */
 const MOBILE_BREAKPOINT = "(max-width: 767px)";
 
-type View = "canvas" | "list";
+type View = "canvas" | "list" | "errors";
 
 const STORAGE_KEY = "wacrm.flowEditor.view";
 
-// Legend covers every node type, derived from NODE_META so a new type
-// can't silently go undocumented. NODE_META's key order already reads
-// the way a flow flows: start → talk → capture → branch → mutate → end.
 const LEGEND_TYPES = Object.keys(NODE_META) as NodeType[];
 
 interface Props {
@@ -60,13 +50,18 @@ interface Props {
 }
 
 export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
-  const t = useTranslations("Flows.builder");
+  return (
+    <FlowEditorProvider initialFlow={initialFlow} initialNodes={initialNodes}>
+      <FlowEditorShellInner />
+    </FlowEditorProvider>
+  );
+}
 
-  // Read the persisted choice in the useState initializer. Safe even
-  // though this is a client component because the parent page only
-  // mounts us AFTER a client-side fetch resolves — there's no SSR
-  // pass for this subtree, so no hydration mismatch to worry about.
-  // Default to `canvas` (the new default) when nothing is saved.
+function FlowEditorShellInner() {
+  const t = useTranslations("Flows.builder");
+  const tv = useTranslations("Flows.validation");
+  const { issues, requestFlash } = useFlowEditor();
+
   const [view, setView] = useState<View>(() => {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -77,97 +72,137 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
     return "canvas";
   });
 
-  // Live mobile detection. We don't render canvas under the
-  // breakpoint regardless of `view` — but we keep `view` itself
-  // intact so the user's preference comes back when they widen
-  // again (e.g. rotating a tablet, resizing a window).
   const isMobile = useMatchMedia(MOBILE_BREAKPOINT);
-  const effectiveView: View = isMobile ? "list" : view;
+  // Mobile: canvas is unusable; Errors remains reachable.
+  const effectiveView: View = isMobile
+    ? view === "errors"
+      ? "errors"
+      : "list"
+    : view;
+
+  const errorCount = issues.filter((i) => i.severity === "error").length;
+  const warningCount = issues.filter((i) => i.severity === "warning").length;
+  const hasIssues = issues.length > 0;
 
   const choose = (next: View) => {
     setView(next);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // ignore
+    if (next === "canvas" || next === "list") {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, next);
+      } catch {
+        // ignore
+      }
     }
   };
 
-  return (
-    <FlowEditorProvider initialFlow={initialFlow} initialNodes={initialNodes}>
-      {/* Break out of dashboard main padding and pin to viewport height so
-          the canvas/list stage gets a real, stable height (React Flow's
-          fitView is unreliable when the parent only has h-full inside a
-          scrollable main). Matches the inbox layout pattern. */}
-      <div className="-m-4 flex h-[calc(100vh-3.5rem)] min-h-0 flex-col overflow-hidden sm:-m-6">
-        <EditorHeader />
+  const jumpToNode = (nodeKey: string) => {
+    choose(isMobile ? "list" : "canvas");
+    // Let the target view mount before flashing/panning.
+    window.requestAnimationFrame(() => requestFlash(nodeKey));
+  };
 
-        {/* ---- mode row: view toggle + node-type legend ----
-            Omitted entirely on mobile (canvas is unavailable there and
-            the legend is lg-only), so there's no empty band above the
-            stage on small screens. */}
-        {!isMobile && (
-          <div className="flex flex-col gap-3 px-6 py-4 lg:flex-row lg:items-start lg:gap-6">
-            <div
-              role="group"
-              aria-label="Editor view"
-              className="inline-flex shrink-0 gap-1 rounded-xl border border-border bg-muted p-1"
-            >
-              <SegButton
-                active={effectiveView === "canvas"}
-                onClick={() => choose("canvas")}
-                icon={<GitFork className="h-4 w-4" />}
-                label={t("canvasView")}
-              />
-              <SegButton
-                active={effectiveView === "list"}
-                onClick={() => choose("list")}
-                icon={<List className="h-4 w-4" />}
-                label={t("listView")}
-              />
-            </div>
-            <div className="hidden flex-1 flex-wrap items-center gap-x-4 gap-y-2 lg:flex">
-              {LEGEND_TYPES.map((t_type) => (
+  return (
+    <div className="-m-4 flex h-[calc(100vh-3.5rem)] min-h-0 flex-col overflow-hidden sm:-m-6">
+      <EditorHeader />
+
+      <div className="flex flex-col gap-3 px-6 py-4 lg:flex-row lg:items-start lg:gap-6">
+        <div
+          role="group"
+          aria-label="Editor view"
+          className="inline-flex shrink-0 flex-wrap gap-1 rounded-xl border border-border bg-muted p-1"
+        >
+          {!isMobile && (
+            <SegButton
+              active={effectiveView === "canvas"}
+              onClick={() => choose("canvas")}
+              icon={<GitFork className="h-4 w-4" />}
+              label={t("canvasView")}
+            />
+          )}
+          <SegButton
+            active={effectiveView === "list"}
+            onClick={() => choose("list")}
+            icon={<List className="h-4 w-4" />}
+            label={t("listView")}
+          />
+          <SegButton
+            active={effectiveView === "errors"}
+            onClick={() => choose("errors")}
+            icon={
+              hasIssues ? (
+                <CircleAlert
+                  className={cn(
+                    "h-4 w-4",
+                    errorCount > 0 ? "text-red-400" : "text-amber-400",
+                  )}
+                />
+              ) : (
+                <CircleCheck className="h-4 w-4 text-emerald-400" />
+              )
+            }
+            label={
+              hasIssues
+                ? t("errorsViewCounts", {
+                    errorCount,
+                    warningCount,
+                  })
+                : t("errorsView")
+            }
+            tone={
+              effectiveView === "errors"
+                ? undefined
+                : errorCount > 0
+                  ? "error"
+                  : warningCount > 0
+                    ? "warning"
+                    : undefined
+            }
+          />
+        </div>
+        {effectiveView !== "errors" && (
+          <div className="hidden flex-1 flex-wrap items-center gap-x-4 gap-y-2 lg:flex">
+            {LEGEND_TYPES.map((t_type) => (
+              <span
+                key={t_type}
+                className="inline-flex items-center gap-2 text-[13px] text-muted-foreground"
+              >
                 <span
-                  key={t_type}
-                  className="inline-flex items-center gap-2 text-[13px] text-muted-foreground"
-                >
-                  <span
-                    className="h-3 w-3 shrink-0 rounded-full"
-                    style={{ background: nodeColors(t_type).solid }}
-                  />
-                  {t(`nodes.${t_type}.label`)}
-                </span>
-              ))}
-            </div>
+                  className="h-3 w-3 shrink-0 rounded-full"
+                  style={{ background: nodeColors(t_type).solid }}
+                />
+                {t(`nodes.${t_type}.label`)}
+              </span>
+            ))}
           </div>
         )}
-
-        {/* ---- stage: the active view, owning its own overflow ---- */}
-        <div className="relative mx-6 min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card-2">
-          {effectiveView === "canvas" ? (
-            <FlowCanvas />
-          ) : (
-            <div className="absolute inset-0 overflow-y-auto">
-              <FlowBuilder />
-            </div>
-          )}
-        </div>
-
-        {/* ---- validation / activate-readiness bar ---- */}
-        <div className="shrink-0 px-6 pb-4 pt-3">
-          <ValidationPanel />
-        </div>
+        {effectiveView === "errors" && (
+          <p className="text-muted-foreground hidden flex-1 text-sm lg:block">
+            {tv("errorsViewHint")}
+          </p>
+        )}
       </div>
-    </FlowEditorProvider>
+
+      <div className="relative mx-6 mb-4 min-h-[12rem] flex-1 overflow-hidden rounded-xl border border-border bg-card-2">
+        {effectiveView === "canvas" && (
+          <div className="absolute inset-0">
+            <FlowCanvas />
+          </div>
+        )}
+        {effectiveView === "list" && (
+          <div className="absolute inset-0 overflow-y-auto">
+            <FlowBuilder />
+          </div>
+        )}
+        {effectiveView === "errors" && (
+          <div className="absolute inset-0 overflow-y-auto p-6">
+            <ValidationPanel variant="page" onJumpNode={jumpToNode} />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
-/**
- * Tiny `useMatchMedia` shim. We could pull in `react-responsive` but
- * this is the only consumer and matchMedia is one of those browser
- * APIs that doesn't need a dependency.
- */
 function useMatchMedia(query: string): boolean {
   const [matches, setMatches] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -177,8 +212,6 @@ function useMatchMedia(query: string): boolean {
     if (typeof window === "undefined") return;
     const mql = window.matchMedia(query);
     const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
-    // Safari < 14 still uses addListener; addEventListener is the
-    // modern path. Both fire identically.
     mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
   }, [query]);
@@ -190,11 +223,13 @@ function SegButton({
   onClick,
   icon,
   label,
+  tone,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  tone?: "error" | "warning";
 }) {
   return (
     <button
@@ -206,6 +241,8 @@ function SegButton({
         active
           ? "bg-card text-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground",
+        !active && tone === "error" && "text-red-300 hover:text-red-200",
+        !active && tone === "warning" && "text-amber-300 hover:text-amber-200",
       )}
     >
       {icon}

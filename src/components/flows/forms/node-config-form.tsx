@@ -976,26 +976,43 @@ function SendMediaForm({
       <div>
         <label className="mb-1 block text-xs text-muted-foreground">{t("fileLabel")}</label>
         {cfg.media_url ? (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-xs">
-            <Paperclip className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
-            <a
-              href={cfg.media_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="min-w-0 flex-1 truncate text-foreground hover:text-cyan-300"
-              title={displayName || cfg.media_url}
-            >
-              {displayName || cfg.media_url}
-            </a>
-            <button
-              type="button"
-              onClick={handleClear}
-              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label={t("removeFile")}
-              disabled={uploading}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-xs">
+              <Paperclip className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
+              <a
+                href={cfg.media_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-w-0 flex-1 truncate text-foreground hover:text-cyan-300"
+                title={displayName || cfg.media_url}
+              >
+                {displayName || cfg.media_url}
+              </a>
+              <button
+                type="button"
+                onClick={handleClear}
+                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={t("removeFile")}
+                disabled={uploading}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {mediaType === "image" && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={cfg.media_url}
+                alt=""
+                className="max-h-28 rounded-md border border-border object-contain"
+              />
+            )}
+            {mediaType === "video" && (
+              <video
+                src={cfg.media_url}
+                controls
+                className="max-h-40 w-full rounded-md border border-border bg-black"
+              />
+            )}
           </div>
         ) : (
           <button
@@ -1028,6 +1045,23 @@ function SendMediaForm({
             // Reset so picking the same file twice still fires onChange.
             e.target.value = "";
           }}
+        />
+        <p className="mt-1.5 text-[11px] text-muted-foreground">{t("orPasteUrl")}</p>
+        <Input
+          value={cfg.media_url ?? ""}
+          onChange={(e) => {
+            const url = e.target.value;
+            onUpdateConfig({
+              media_url: url,
+              // Keep a filename when pasting a link so the customer
+              // sees something readable for documents.
+              ...(url && !cfg.filename
+                ? { filename: url.split("/").pop()?.split("?")[0] ?? "" }
+                : {}),
+            });
+          }}
+          placeholder={t("mediaUrlPlaceholder")}
+          className="mt-1 bg-muted text-xs"
         />
       </div>
 

@@ -133,7 +133,7 @@ export function EditorHeader() {
               disabled={activating || !canActivate}
               title={
                 !canActivate
-                  ? "Fix the issues below before activating"
+                  ? "Open the Errors tab and fix issues before activating"
                   : undefined
               }
             >

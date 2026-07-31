@@ -1133,6 +1133,8 @@
       "deleteNode": "Delete node",
       "canvasView": "Canvas",
       "listView": "List",
+      "errorsView": "Errors",
+      "errorsViewCounts": "{errorCount} errors, {warningCount} warnings",
       "enterFullscreen": "Fullscreen",
       "exitFullscreen": "Exit fullscreen",
       "noNodeSelected": "No node selected",
@@ -1188,7 +1190,9 @@
         "fileLabel": "File",
         "removeFile": "Remove file",
         "uploading": "Uploading…",
-        "clickToUpload": "Click to upload (max 16 MB)",
+        "clickToUpload": "Click to upload from your PC (max 16 MB)",
+        "orPasteUrl": "Or paste a public image / video / document URL",
+        "mediaUrlPlaceholder": "https://…",
         "captionLabel": "Caption (optional, shown under the media)",
         "filenameLabel": "Filename shown to the customer (documents only)",
         "filenamePlaceholder": "invoice.pdf",
@@ -1204,7 +1208,7 @@
       "nodes": {
         "start": {
           "label": "Start",
-          "blurb": "Entry point of the flow"
+          "blurb": "Entry point — set keywords / trigger here"
         },
         "send_message": {
           "label": "Send message",
@@ -1248,11 +1252,12 @@
       "noIssues": "No issues — click Activate to go live. Draft flows never reply on WhatsApp.",
       "noIssuesLive": "No issues. This flow is Active and will match its trigger.",
       "summary": "{errorCount} {errorCount, plural, =1 {error} other {errors}}, {warningCount} {warningCount, plural, =1 {warning} other {warnings}}",
-      "jumpToNode": "Jump to node {key}"
+      "jumpToNode": "Jump to node {key}",
+      "errorsViewHint": "Click an issue to jump to that node on the canvas."
     },
     "editorState": {
       "saved": "Saved.",
-      "fixIssues": "Fix the issues below before activating.",
+      "fixIssues": "Open the Errors tab and fix the issues before activating.",
       "statusActivated": "Flow activated.",
       "statusArchived": "Archived.",
       "statusDraft": "Saved as draft."

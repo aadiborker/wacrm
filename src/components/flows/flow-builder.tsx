@@ -31,13 +31,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -59,6 +52,7 @@ import {
   type NodeType,
 } from './shared';
 import { NodeConfigForm } from './forms/node-config-form';
+import { FlowTriggerFields } from './forms/flow-trigger-fields';
 import { NodeKeySelect } from './forms/fields';
 import { IssueLine } from './validation-panel';
 import { useFlowEditor, type BuilderState } from './flow-editor-state';
@@ -156,12 +150,7 @@ export function FlowBuilder() {
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-7 px-6 py-8">
-      <TriggerPanel
-        state={state}
-        setState={setState}
-        triggerIssues={issues.filter((i) => i.scope === 'trigger')}
-        t={t}
-      />
+      <TriggerPanel />
 
       <EntryPicker state={state} setState={setState} t={t} />
 
@@ -207,135 +196,13 @@ export function FlowBuilder() {
 }
 
 // ============================================================
-// Keyword trigger input
-// ============================================================
-
-/**
- * Comma-separated keyword entry. Keeps a local draft string so the
- * comma (and trailing space) the user types survive until they're done
- * — parsing into the keywords array on every keystroke stripped the
- * trailing comma the instant it was typed, making it impossible to
- * start a second keyword (issue #234). We commit on blur / Enter, then
- * re-display the cleaned, rejoined form. Seeded once on mount; the
- * component unmounts/remounts when the trigger type changes, so the
- * seed stays in sync. Mirrors the automations builder's KeywordMatchConfig.
- */
-function KeywordsInput({
-  keywords,
-  onChange,
-  t,
-}: {
-  keywords: string[];
-  onChange: (keywords: string[]) => void;
-  t: ReturnType<typeof useTranslations>;
-}) {
-  const [draft, setDraft] = useState(keywords.join(', '));
-
-  function commit() {
-    const parsed = draft
-      .split(',')
-      .map((k) => k.trim())
-      .filter(Boolean);
-    setDraft(parsed.join(', '));
-    onChange(parsed);
-  }
-
-  return (
-    <Input
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          commit();
-        }
-      }}
-      placeholder={t('keywordsPlaceholder')}
-      className="bg-muted"
-    />
-  );
-}
-
-// ============================================================
 // Trigger panel
 // ============================================================
 
-function TriggerPanel({
-  state,
-  setState,
-  triggerIssues,
-  t,
-}: {
-  state: BuilderState;
-  setState: React.Dispatch<React.SetStateAction<BuilderState>>;
-  triggerIssues: ValidationIssue[];
-  t: ReturnType<typeof useTranslations>;
-}) {
+function TriggerPanel() {
   return (
     <section className="border-border bg-card rounded-lg border p-4">
-      <h2 className="text-foreground mb-3 text-sm font-semibold">{t('triggerTitle')}</h2>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div>
-          <label className="text-muted-foreground mb-1 block text-xs">
-            {t('whenLabel')}
-          </label>
-          <Select
-            value={state.trigger_type}
-            onValueChange={(v) =>
-              setState((s) => ({
-                ...s,
-                trigger_type: v as BuilderState['trigger_type'],
-                trigger_config:
-                  v === 'keyword' ? { keywords: [] } : v === 'manual' ? {} : {},
-              }))
-            }
-          >
-            <SelectTrigger className="bg-muted">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="keyword">
-                {t('triggerKeywordTitle')}
-              </SelectItem>
-              <SelectItem value="first_inbound_message">
-                {t('triggerFirstInboundTitle')}
-              </SelectItem>
-              <SelectItem value="manual">
-                {t('triggerManualTitle')}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {state.trigger_type === 'keyword' && (
-          <div>
-            <label className="text-muted-foreground mb-1 block text-xs">
-              {t('keywordsLabel')}
-            </label>
-            <KeywordsInput
-              keywords={
-                Array.isArray(state.trigger_config.keywords)
-                  ? (state.trigger_config.keywords as string[])
-                  : []
-              }
-              onChange={(keywords) =>
-                setState((s) => ({
-                  ...s,
-                  trigger_config: { ...s.trigger_config, keywords },
-                }))
-              }
-              t={t}
-            />
-          </div>
-        )}
-      </div>
-      {triggerIssues.length > 0 && (
-        <div className="mt-3 flex flex-col gap-1">
-          {triggerIssues.map((i, ix) => (
-            <IssueLine key={ix} issue={i} />
-          ))}
-        </div>
-      )}
+      <FlowTriggerFields />
     </section>
   );
 }
