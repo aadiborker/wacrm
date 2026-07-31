@@ -16,6 +16,7 @@ import {
   HelpCircle,
   UserPlus,
   FileText,
+  Sparkles,
 } from "lucide-react";
 
 import { useTranslations } from "next-intl";
@@ -200,6 +201,32 @@ export function FlowsList({ initialFlows, initialTemplates }: Props) {
             </DialogDescription>
           </DialogHeader>
 
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              {t("startSimple")}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setCreateOpen(false);
+                router.push("/flows/new/simple");
+              }}
+              disabled={creating}
+              className="flex w-full flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-4 text-left transition-colors hover:bg-primary/10 disabled:opacity-50"
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Sparkles className="h-4 w-4 text-primary" />
+                {t("simpleMenuTitle")}
+              </span>
+              <span className="text-xs leading-relaxed text-muted-foreground">
+                {t("simpleMenuDesc")}
+              </span>
+              <span className="text-xs font-medium text-primary">
+                {t("simpleMenuCta")} →
+              </span>
+            </button>
+          </div>
+
           {templates.length > 0 && (
             <div className="space-y-3">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -280,14 +307,14 @@ function EmptyState({
   t: ReturnType<typeof useTranslations>;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 px-6 py-16 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-        <Workflow className="h-6 w-6 text-muted-foreground" />
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-gradient-to-b from-card/80 to-muted/20 px-6 py-16 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+        <Workflow className="h-6 w-6" />
       </div>
       <h2 className="mt-4 text-base font-medium text-foreground">
         {t("emptyTitle")}
       </h2>
-      <p className="mt-1 max-w-md text-sm text-muted-foreground">
+      <p className="mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
         {t("emptyDesc")}
       </p>
       <GatedButton

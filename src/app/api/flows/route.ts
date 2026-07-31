@@ -3,6 +3,12 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { getFlowTemplate } from '@/lib/flows/templates'
+import {
+  buildSimpleMenuFlow,
+  validateSimpleMenuSpec,
+  type SimpleMenuSpec,
+} from '@/lib/flows/simple-menu'
+import { validateFlowForActivation } from '@/lib/flows/validate'
 
 /**
  * GET /api/flows — list the caller's flows.
@@ -90,6 +96,10 @@ export async function POST(request: Request) {
          * provided.
          */
         template_slug?: string
+        /** Wizard payload — builds a menu graph server-side. */
+        simple_menu?: SimpleMenuSpec
+        /** When true with simple_menu, activate immediately if valid. */
+        activate?: boolean
       }
     | null
   if (!body) {
@@ -97,6 +107,102 @@ export async function POST(request: Request) {
   }
 
   const admin = supabaseAdmin()
+
+  // -------- Simple menu wizard path --------
+  if (body.simple_menu) {
+    const issues = validateSimpleMenuSpec(body.simple_menu)
+    if (issues.length > 0) {
+      return NextResponse.json(
+        { error: issues[0]?.message ?? 'Invalid menu', issues },
+        { status: 400 },
+      )
+    }
+    let built
+    try {
+      built = buildSimpleMenuFlow(body.simple_menu)
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error: err instanceof Error ? err.message : 'Failed to build menu',
+        },
+        { status: 400 },
+      )
+    }
+
+    const { data: flow, error: flowErr } = await admin
+      .from('flows')
+      .insert({
+        user_id: userId,
+        account_id: accountId,
+        name: built.name,
+        description: built.description,
+        status: 'draft',
+        trigger_type: built.trigger_type,
+        trigger_config: built.trigger_config,
+        entry_node_id: built.entry_node_id,
+      })
+      .select()
+      .single()
+    if (flowErr || !flow) {
+      return NextResponse.json(
+        { error: flowErr?.message ?? 'flow insert failed' },
+        { status: 500 },
+      )
+    }
+
+    const { error: nodesErr } = await admin.from('flow_nodes').insert(
+      built.nodes.map((n) => ({
+        flow_id: flow.id,
+        node_key: n.node_key,
+        node_type: n.node_type,
+        config: n.config,
+      })),
+    )
+    if (nodesErr) {
+      await admin.from('flows').delete().eq('id', flow.id)
+      return NextResponse.json({ error: nodesErr.message }, { status: 500 })
+    }
+
+    if (body.activate) {
+      const activationIssues = validateFlowForActivation(
+        {
+          name: built.name,
+          trigger_type: built.trigger_type,
+          trigger_config: built.trigger_config as unknown as Record<string, unknown>,
+          entry_node_id: built.entry_node_id,
+        },
+        built.nodes.map((n) => ({
+          node_key: n.node_key,
+          node_type: n.node_type,
+          config: n.config as Record<string, unknown>,
+        })),
+      )
+      const blockers = activationIssues.filter((i) => i.severity === 'error')
+      if (blockers.length === 0) {
+        const { data: activated } = await admin
+          .from('flows')
+          .update({ status: 'active', updated_at: new Date().toISOString() })
+          .eq('id', flow.id)
+          .select()
+          .maybeSingle()
+        return NextResponse.json(
+          { flow: activated ?? { ...flow, status: 'active' } },
+          { status: 201 },
+        )
+      }
+      // Created as draft; surface why activate was skipped.
+      return NextResponse.json(
+        {
+          flow,
+          activateSkipped: true,
+          issues: activationIssues,
+        },
+        { status: 201 },
+      )
+    }
+
+    return NextResponse.json({ flow }, { status: 201 })
+  }
 
   // -------- Template clone path --------
   if (body.template_slug) {
