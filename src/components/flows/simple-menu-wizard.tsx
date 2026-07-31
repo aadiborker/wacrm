@@ -556,34 +556,46 @@ function OptionCard({
       </div>
       <div className="space-y-2">
         <Label>{t("whenTapped")}</Label>
-        <Select
-          value={option.action}
-          onValueChange={(v) => {
-            const action = v as SimpleMenuOptionAction;
-            onChange({
-              action,
-              submenuOptions:
-                action === "submenu"
-                  ? option.submenuOptions?.length
-                    ? option.submenuOptions
-                    : [{ title: "", action: "handoff" }]
-                  : option.submenuOptions,
-              submenuBody:
-                action === "submenu"
-                  ? option.submenuBody || ""
-                  : option.submenuBody,
-            });
-          }}
-        >
-          <SelectTrigger className="bg-muted">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="handoff">{t("actionHandoff")}</SelectItem>
-            <SelectItem value="message">{t("actionMessage")}</SelectItem>
-            <SelectItem value="submenu">{t("actionSubmenu")}</SelectItem>
-          </SelectContent>
-        </Select>
+        {/* Visible buttons — the Select popup was clipping the 3rd
+            option ("Show another menu") on short viewports. */}
+        <div className="grid gap-2">
+          {(
+            [
+              ["handoff", t("actionHandoff")],
+              ["message", t("actionMessage")],
+              ["submenu", t("actionSubmenu")],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => {
+                const action = value as SimpleMenuOptionAction;
+                onChange({
+                  action,
+                  submenuOptions:
+                    action === "submenu"
+                      ? option.submenuOptions?.length
+                        ? option.submenuOptions
+                        : [{ title: "", action: "handoff" }]
+                      : option.submenuOptions,
+                  submenuBody:
+                    action === "submenu"
+                      ? option.submenuBody || ""
+                      : option.submenuBody,
+                });
+              }}
+              className={cn(
+                "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+                option.action === value
+                  ? "border-primary bg-primary/10 font-medium text-foreground"
+                  : "border-border bg-muted text-muted-foreground hover:border-primary/40 hover:text-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {option.action === "message" && (
@@ -660,7 +672,7 @@ function OptionCard({
                 <SelectTrigger className="bg-muted">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent alignItemWithTrigger={false}>
                   <SelectItem value="handoff">{t("actionHandoff")}</SelectItem>
                   <SelectItem value="message">{t("actionMessage")}</SelectItem>
                 </SelectContent>
