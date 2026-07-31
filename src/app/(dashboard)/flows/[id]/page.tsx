@@ -8,6 +8,10 @@ import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 
 import { FlowEditorShell } from "@/components/flows/flow-editor-shell";
+import {
+  isSimpleMenuFlow,
+  resolveSimpleMenuSpec,
+} from "@/lib/flows/simple-menu";
 import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
 
 /**
@@ -16,6 +20,8 @@ import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
  * Loads `{flow, nodes}` from `/api/flows/[id]` and hands it to
  * `<FlowBuilder>`. Owns the loading/error state so the builder can
  * focus purely on editing.
+ *
+ * Simple Menu flows redirect to the wizard instead of the node canvas.
  *
  * Open to every authenticated user — the beta gate that previously
  * 404'd non-beta accounts was removed in PR #134. The API still
@@ -47,10 +53,23 @@ export default function FlowEditorPage() {
           flow: FlowRow;
           nodes: FlowNodeRow[];
         };
-        if (!cancelled) {
-          setFlow(json.flow);
-          setNodes(json.nodes ?? []);
+        if (cancelled) return;
+
+        const lookSimple =
+          isSimpleMenuFlow(json.flow) ||
+          (json.nodes ?? []).some(
+            (n) => n.node_key === "menu_main" && n.node_type === "send_list",
+          );
+        if (
+          lookSimple &&
+          resolveSimpleMenuSpec(json.flow, json.nodes ?? [])
+        ) {
+          router.replace(`/flows/simple-menu/${json.flow.id}`);
+          return;
         }
+
+        setFlow(json.flow);
+        setNodes(json.nodes ?? []);
       } catch (err) {
         if (!cancelled) {
           console.error(err);
@@ -63,7 +82,7 @@ export default function FlowEditorPage() {
     return () => {
       cancelled = true;
     };
-  }, [params.id]);
+  }, [params.id, router, t]);
 
   if (loading) {
     return (

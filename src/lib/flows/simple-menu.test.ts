@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSimpleMenuFlow,
+  inferSimpleMenuSpecFromNodes,
   validateSimpleMenuSpec,
   type SimpleMenuSpec,
 } from "./simple-menu";
@@ -116,5 +117,32 @@ describe("buildSimpleMenuFlow", () => {
     expect(keys).toContain("menu_sub_0");
     expect(keys.some((k) => k.startsWith("menu_sub_0_"))).toBe(true);
     expect(keys).toContain("end");
+  });
+
+  it("round-trips through inferSimpleMenuSpecFromNodes for legacy drafts", () => {
+    const built = buildSimpleMenuFlow(valid);
+    // Simulate a legacy save without simple_menu_spec.
+    const { simple_menu_spec: _drop, ...trigger } = built.trigger_config as {
+      keywords: string[];
+      match_type: string;
+      simple_menu_spec?: unknown;
+    };
+    void _drop;
+    const inferred = inferSimpleMenuSpecFromNodes(
+      { name: built.name, trigger_config: trigger },
+      built.nodes.map((n) => ({
+        node_key: n.node_key,
+        node_type: n.node_type,
+        config: n.config as Record<string, unknown>,
+      })),
+    );
+    expect(inferred).not.toBeNull();
+    expect(inferred!.name).toBe("Shop menu");
+    expect(inferred!.keyword).toBe("Help");
+    expect(inferred!.welcomeText).toBe("Welcome! How can we help?");
+    expect(inferred!.options).toHaveLength(2);
+    expect(inferred!.options[0]!.action).toBe("handoff");
+    expect(inferred!.options[1]!.action).toBe("submenu");
+    expect(inferred!.options[1]!.submenuOptions).toHaveLength(2);
   });
 });

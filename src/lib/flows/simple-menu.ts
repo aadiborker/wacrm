@@ -461,13 +461,18 @@ export function buildSimpleMenuFlow(spec: SimpleMenuSpec): BuiltSimpleMenuFlow {
 export function isSimpleMenuFlow(flow: {
   trigger_config?: object | null;
   description?: string | null;
+  entry_node_id?: string | null;
 }): boolean {
   const cfg = (flow.trigger_config ?? {}) as Record<string, unknown>;
   if (cfg.simple_menu_spec && typeof cfg.simple_menu_spec === "object") {
     return true;
   }
   // Legacy drafts from before we stored the spec.
-  return (flow.description ?? "").startsWith("Simple menu —");
+  const desc = flow.description ?? "";
+  if (desc.startsWith("Simple menu —") || desc.startsWith("Simple menu -")) {
+    return true;
+  }
+  return false;
 }
 
 export function getSimpleMenuSpecFromFlow(flow: {
@@ -487,6 +492,175 @@ export function getSimpleMenuSpecFromFlow(flow: {
       typeof s.buttonLabel === "string" ? s.buttonLabel : "View options",
     options: s.options as SimpleMenuSpec["options"],
   };
+}
+
+type InferNode = {
+  node_key: string;
+  node_type: string;
+  config: Record<string, unknown>;
+};
+
+/**
+ * Rebuild a wizard form from a Simple Menu node graph (for drafts saved
+ * before we stored `simple_menu_spec` on the flow).
+ */
+export function inferSimpleMenuSpecFromNodes(
+  flow: {
+    name?: string | null;
+    trigger_config?: object | null;
+  },
+  nodes: InferNode[],
+): SimpleMenuSpec | null {
+  const byKey = new Map(nodes.map((n) => [n.node_key, n]));
+  const main = byKey.get("menu_main");
+  if (!main || main.node_type !== "send_list") return null;
+
+  const mainCfg = main.config;
+  const welcomeText =
+    typeof mainCfg.text === "string" ? mainCfg.text : "";
+  const buttonLabel =
+    typeof mainCfg.button_label === "string" && mainCfg.button_label.trim()
+      ? mainCfg.button_label
+      : "View options";
+
+  const mainRows = listRows(mainCfg);
+  if (mainRows.length === 0) return null;
+
+  const options: SimpleMenuOption[] = [];
+  for (const row of mainRows) {
+    const opt = inferChoice(row.title, row.next_node_key, byKey, 0);
+    if (!opt) continue;
+    options.push(opt as SimpleMenuOption);
+  }
+  if (options.length === 0) return null;
+
+  const cfg = (flow.trigger_config ?? {}) as Record<string, unknown>;
+  const keywords = Array.isArray(cfg.keywords)
+    ? (cfg.keywords as unknown[]).filter(
+        (k): k is string => typeof k === "string" && k.trim().length > 0,
+      )
+    : [];
+  const keyword = keywords[0]?.trim() || "Help";
+
+  return {
+    name: (flow.name ?? "").trim() || "Simple menu",
+    keyword,
+    welcomeText,
+    buttonLabel,
+    options,
+  };
+}
+
+/** Prefer stored wizard form; otherwise infer from nodes. */
+export function resolveSimpleMenuSpec(
+  flow: {
+    name?: string | null;
+    trigger_config?: object | null;
+    description?: string | null;
+  },
+  nodes?: InferNode[] | null,
+): SimpleMenuSpec | null {
+  const stored = getSimpleMenuSpecFromFlow(flow);
+  if (stored) return stored;
+  if (!nodes || nodes.length === 0) return null;
+  return inferSimpleMenuSpecFromNodes(flow, nodes);
+}
+
+function listRows(config: Record<string, unknown>): Array<{
+  title: string;
+  next_node_key: string;
+}> {
+  const sections = Array.isArray(config.sections) ? config.sections : [];
+  const rows: Array<{ title: string; next_node_key: string }> = [];
+  for (const sec of sections) {
+    if (!sec || typeof sec !== "object") continue;
+    const secRows = Array.isArray((sec as { rows?: unknown }).rows)
+      ? ((sec as { rows: unknown[] }).rows)
+      : [];
+    for (const r of secRows) {
+      if (!r || typeof r !== "object") continue;
+      const row = r as { title?: unknown; next_node_key?: unknown };
+      const title = typeof row.title === "string" ? row.title.trim() : "";
+      const next =
+        typeof row.next_node_key === "string" ? row.next_node_key : "";
+      if (!title || !next) continue;
+      rows.push({ title, next_node_key: next });
+    }
+  }
+  return rows;
+}
+
+function inferChoice(
+  title: string,
+  nextKey: string,
+  byKey: Map<string, InferNode>,
+  depth: number,
+): SimpleMenuLeaf | SimpleMenuOption | null {
+  if (nextKey === "end") {
+    return { title, action: "end" };
+  }
+
+  const node = byKey.get(nextKey);
+  if (!node) {
+    return { title, action: "handoff", handoffNote: "" };
+  }
+
+  if (node.node_type === "handoff") {
+    const note =
+      typeof node.config.note === "string" ? node.config.note : undefined;
+    return { title, action: "handoff", handoffNote: note };
+  }
+
+  if (node.node_type === "send_message") {
+    const text =
+      typeof node.config.text === "string" ? node.config.text : "";
+    const after =
+      typeof node.config.next_node_key === "string"
+        ? node.config.next_node_key
+        : "";
+    let handoffNote: string | undefined;
+    const afterNode = after ? byKey.get(after) : undefined;
+    if (afterNode?.node_type === "handoff") {
+      handoffNote =
+        typeof afterNode.config.note === "string"
+          ? afterNode.config.note
+          : undefined;
+    }
+    return {
+      title,
+      action: "message",
+      messageText: text,
+      handoffNote,
+    };
+  }
+
+  if (node.node_type === "send_list" && depth < SIMPLE_MENU_MAX_NEST) {
+    const body =
+      typeof node.config.text === "string" ? node.config.text : "";
+    const childRows = listRows(node.config);
+    const submenuOptions: SimpleMenuLeaf[] = [];
+    for (const child of childRows) {
+      const leaf = inferChoice(
+        child.title,
+        child.next_node_key,
+        byKey,
+        depth + 1,
+      );
+      if (leaf) submenuOptions.push(leaf as SimpleMenuLeaf);
+    }
+    return {
+      title,
+      action: "submenu",
+      submenuBody: body,
+      submenuOptions:
+        submenuOptions.length > 0
+          ? submenuOptions
+          : [{ title: "", action: "handoff" }],
+    };
+  }
+
+  // Unknown / deeper nesting — treat as handoff so the wizard still opens.
+  return { title, action: "handoff", handoffNote: "" };
 }
 
 export function blankSimpleMenuSpec(): SimpleMenuSpec {

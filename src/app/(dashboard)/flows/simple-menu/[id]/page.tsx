@@ -8,14 +8,15 @@ import { useTranslations } from "next-intl";
 
 import { SimpleMenuWizard } from "@/components/flows/simple-menu-wizard";
 import {
-  getSimpleMenuSpecFromFlow,
   isSimpleMenuFlow,
+  resolveSimpleMenuSpec,
   type SimpleMenuSpec,
 } from "@/lib/flows/simple-menu";
-import type { FlowRow } from "@/lib/flows/types";
+import type { FlowNodeRow, FlowRow } from "@/lib/flows/types";
 
 /**
  * Edit an existing Simple Menu flow in the wizard (not the node canvas).
+ * Works for new saves (stored form) and old drafts (inferred from nodes).
  */
 export default function EditSimpleMenuFlowPage() {
   const params = useParams<{ id: string }>();
@@ -34,15 +35,25 @@ export default function EditSimpleMenuFlowPage() {
       try {
         const res = await fetch(`/api/flows/${id}`);
         if (!res.ok) throw new Error(`Load failed: ${res.status}`);
-        const json = (await res.json()) as { flow: FlowRow };
+        const json = (await res.json()) as {
+          flow: FlowRow;
+          nodes: FlowNodeRow[];
+        };
         const flow = json.flow;
-        if (!isSimpleMenuFlow(flow)) {
+        const nodes = json.nodes ?? [];
+
+        const looksSimple =
+          isSimpleMenuFlow(flow) ||
+          nodes.some(
+            (n) => n.node_key === "menu_main" && n.node_type === "send_list",
+          );
+        if (!looksSimple) {
           router.replace(`/flows/${id}`);
           return;
         }
-        const spec = getSimpleMenuSpecFromFlow(flow);
+
+        const spec = resolveSimpleMenuSpec(flow, nodes);
         if (!spec) {
-          // Created before we stored the wizard form — open canvas instead.
           toast.message(t("editNeedsCanvas"));
           router.replace(`/flows/${id}`);
           return;
