@@ -11,6 +11,10 @@ import {
   Trash2,
   Sparkles,
   Save,
+  History,
+  PauseCircle,
+  PlayCircle,
+  CircleDot,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -32,8 +36,10 @@ import {
   type SimpleMenuSpec,
 } from "@/lib/flows/simple-menu";
 import { SimpleMenuCanvasPreview } from "@/components/flows/simple-menu-canvas-preview";
+import type { FlowRow } from "@/lib/flows/types";
 
 type Step = 1 | 2 | 3;
+type FlowStatus = FlowRow["status"];
 
 function CharCount({ value, max }: { value: string; max: number }) {
   const n = value.length;
@@ -53,26 +59,36 @@ export function SimpleMenuWizard({
   existingFlowId = null,
   initialSpec,
   initialActivate = true,
+  initialStatus = "draft",
+  initialExecutionCount = 0,
 }: {
   /** When set, saves update this flow instead of creating a new one. */
   existingFlowId?: string | null;
   initialSpec?: SimpleMenuSpec;
   initialActivate?: boolean;
+  initialStatus?: FlowStatus;
+  initialExecutionCount?: number;
 } = {}) {
   const router = useRouter();
   const t = useTranslations("Flows.simpleMenu");
+  const tList = useTranslations("Flows.list");
   const [step, setStep] = useState<Step>(1);
   const [spec, setSpec] = useState<SimpleMenuSpec>(
     () => initialSpec ?? blankSimpleMenuSpec(),
   );
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [statusBusy, setStatusBusy] = useState(false);
   const [activate, setActivate] = useState(initialActivate);
   /** Set after first Save draft — further saves update this flow. */
   const [flowId, setFlowId] = useState<string | null>(existingFlowId);
+  const [status, setStatus] = useState<FlowStatus>(
+    initialStatus === "active" ? "active" : initialStatus === "archived" ? "archived" : "draft",
+  );
+  const [executionCount] = useState(initialExecutionCount);
 
   const issues = useMemo(() => validateSimpleMenuSpec(spec), [spec]);
-  const busy = creating || saving;
+  const busy = creating || saving || statusBusy;
 
   function patch(p: Partial<SimpleMenuSpec>) {
     setSpec((s) => ({ ...s, ...p }));
@@ -116,6 +132,7 @@ export function SimpleMenuWizard({
     const id = json.flow?.id as string | undefined;
     if (!id) throw new Error(t("createError"));
     setFlowId(id);
+    setStatus("draft");
     return id;
   }
 
@@ -132,6 +149,55 @@ export function SimpleMenuWizard({
       toast.error(err instanceof Error ? err.message : t("saveError"));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSetStatus(next: "draft" | "active") {
+    if (!flowId) return;
+    setStatusBusy(true);
+    try {
+      if (next === "active") {
+        await persistDraft();
+      }
+      const res = await fetch(`/api/flows/${flowId}/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg =
+          Array.isArray(json.issues) && json.issues[0]?.message
+            ? json.issues[0].message
+            : (json.error ?? `Status change failed: ${res.status}`);
+        throw new Error(msg);
+      }
+      setStatus(next);
+      setActivate(next === "active");
+      toast.success(next === "active" ? t("statusActivated") : t("statusPaused"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("statusError"));
+    } finally {
+      setStatusBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!flowId) return;
+    const yes = window.confirm(
+      tList("deleteConfirm", { name: spec.name || t("title") }),
+    );
+    if (!yes) return;
+    setStatusBusy(true);
+    try {
+      const res = await fetch(`/api/flows/${flowId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+      toast.success(tList("deleteSuccess"));
+      router.push("/flows");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : tList("deleteError"));
+      setStatusBusy(false);
     }
   }
 
@@ -154,8 +220,10 @@ export function SimpleMenuWizard({
         if (!res.ok) {
           throw new Error(json.error ?? `Activate failed: ${res.status}`);
         }
+        setStatus("active");
         toast.success(t("createdActive"));
       } else {
+        setStatus("draft");
         toast.success(t("createdDraft"));
       }
       // Stay in the simple-menu world — don't dump users on the node canvas.
@@ -332,7 +400,7 @@ export function SimpleMenuWizard({
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
-      <div className="flex items-start gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <button
           type="button"
           onClick={() => router.push("/flows")}
@@ -341,20 +409,91 @@ export function SimpleMenuWizard({
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <div>
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Sparkles className="h-5 w-5 shrink-0 text-primary" />
             <h1 className="text-2xl font-semibold text-foreground">
-              {t("title")}
+              {spec.name.trim() || t("title")}
             </h1>
-            {flowId && (
-              <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {t("draftSavedBadge")}
-              </span>
-            )}
+            {flowId && <StatusChip status={status} t={t} />}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{t("subtitle")}</p>
         </div>
+        {flowId && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push(`/flows/${flowId}/runs`)}
+              disabled={busy}
+            >
+              <History className="h-4 w-4" />
+              {t("runs")}
+              <span className="ml-0.5 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                {executionCount}
+              </span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleDelete()}
+              disabled={busy}
+              className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+            >
+              <Trash2 className="h-4 w-4" />
+              {t("delete")}
+            </Button>
+            {status === "active" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleSetStatus("draft")}
+                disabled={busy}
+              >
+                {statusBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <PauseCircle className="h-4 w-4" />
+                )}
+                {t("pause")}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleSetStatus("active")}
+                disabled={busy || issues.length > 0}
+                title={
+                  issues.length > 0 ? issues[0]?.message : undefined
+                }
+              >
+                {statusBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <PlayCircle className="h-4 w-4" />
+                )}
+                {t("activate")}
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleSaveDraft()}
+              disabled={busy || issues.length > 0}
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {t("save")}
+            </Button>
+          </div>
+        )}
       </div>
 
       <ol className="flex gap-2 text-xs font-medium">
@@ -896,5 +1035,40 @@ function ActionPicker({
         </button>
       ))}
     </div>
+  );
+}
+
+function StatusChip({
+  status,
+  t,
+}: {
+  status: FlowStatus;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const cfg =
+    status === "active"
+      ? {
+          cls: "border-emerald-600/40 bg-emerald-500/10 text-emerald-300",
+          label: t("statusActive"),
+        }
+      : status === "archived"
+        ? {
+            cls: "border-border bg-muted/50 text-muted-foreground",
+            label: t("statusArchived"),
+          }
+        : {
+            cls: "border-border bg-muted text-muted-foreground",
+            label: t("statusDraft"),
+          };
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide",
+        cfg.cls,
+      )}
+    >
+      <CircleDot className="h-3 w-3" />
+      {cfg.label}
+    </span>
   );
 }

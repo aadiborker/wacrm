@@ -26,6 +26,9 @@ export default function EditSimpleMenuFlowPage() {
   const [flowId, setFlowId] = useState<string | null>(null);
   const [initialSpec, setInitialSpec] = useState<SimpleMenuSpec | null>(null);
   const [initialActivate, setInitialActivate] = useState(false);
+  const [initialStatus, setInitialStatus] =
+    useState<FlowRow["status"]>("draft");
+  const [executionCount, setExecutionCount] = useState(0);
 
   useEffect(() => {
     const id = params.id;
@@ -62,6 +65,8 @@ export default function EditSimpleMenuFlowPage() {
         setFlowId(flow.id);
         setInitialSpec(spec);
         setInitialActivate(flow.status === "active");
+        setInitialStatus(flow.status);
+        setExecutionCount(flow.execution_count ?? 0);
       } catch (err) {
         console.error(err);
         toast.error(t("loadError"));
@@ -88,6 +93,8 @@ export default function EditSimpleMenuFlowPage() {
       existingFlowId={flowId}
       initialSpec={initialSpec}
       initialActivate={initialActivate}
+      initialStatus={initialStatus}
+      initialExecutionCount={executionCount}
     />
   );
 }
