@@ -35,6 +35,7 @@ import {
   type SimpleMenuOptionAction,
   type SimpleMenuSpec,
 } from "@/lib/flows/simple-menu";
+import { SimpleMenuCanvasPreview } from "@/components/flows/simple-menu-canvas-preview";
 
 type Step = 1 | 2 | 3;
 
@@ -199,7 +200,7 @@ export function SimpleMenuWizard() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-6">
+    <div className="mx-auto max-w-3xl space-y-6 p-6">
       <div className="flex items-start gap-3">
         <button
           type="button"
@@ -357,6 +358,17 @@ export function SimpleMenuWizard() {
               </li>
             ))}
           </ul>
+
+          <div className="space-y-2 border-t border-border pt-4">
+            <h3 className="text-sm font-semibold text-foreground">
+              {t("canvasPreview")}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {t("canvasPreviewHint")}
+            </p>
+            <SimpleMenuCanvasPreview spec={spec} />
+          </div>
+
           {issues.length > 0 && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {issues[0]!.message}

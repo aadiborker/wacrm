@@ -1053,6 +1053,8 @@
       "addSubOption": "Add choice",
       "removeOption": "Remove option",
       "reviewTitle": "Ready to create",
+      "canvasPreview": "Canvas preview",
+      "canvasPreviewHint": "This is the flow graph we’ll create. Pan and zoom to explore — it’s read-only.",
       "optionsCount": "Options",
       "activateNow": "Activate immediately so WhatsApp can trigger it",
       "createActivate": "Create & activate",
