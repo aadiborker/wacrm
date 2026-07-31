@@ -1056,6 +1056,8 @@
       "reviewTitle": "만들 준비 완료",
       "canvasPreview": "캔버스 미리보기",
       "canvasPreviewHint": "이렇게 만들어진 플로우 그래프입니다. 이동·확대는 가능하고 편집은 할 수 없습니다.",
+      "canvasExpand": "크게 보기",
+      "canvasCollapse": "닫기",
       "optionsCount": "옵션 수",
       "activateNow": "바로 활성화해 WhatsApp에서 바로 동작하게 함",
       "createActivate": "만들고 활성화",
