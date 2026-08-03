@@ -9,6 +9,7 @@ import {
   type SimpleMenuSpec,
 } from '@/lib/flows/simple-menu'
 import { validateFlowForActivation } from '@/lib/flows/validate'
+import { resolveFallbackPolicy } from '@/lib/flows/fallback'
 
 /**
  * GET /api/flows — list the caller's flows.
@@ -100,6 +101,8 @@ export async function POST(request: Request) {
         simple_menu?: SimpleMenuSpec
         /** When true with simple_menu, activate immediately if valid. */
         activate?: boolean
+        /** Optional idle / fallback policy for simple_menu creates. */
+        fallback_policy?: Record<string, unknown>
       }
     | null
   if (!body) {
@@ -140,6 +143,7 @@ export async function POST(request: Request) {
         trigger_type: built.trigger_type,
         trigger_config: built.trigger_config,
         entry_node_id: built.entry_node_id,
+        fallback_policy: resolveFallbackPolicy(body.fallback_policy ?? null),
       })
       .select()
       .single()

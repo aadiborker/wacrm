@@ -29,6 +29,9 @@ export default function EditSimpleMenuFlowPage() {
   const [initialStatus, setInitialStatus] =
     useState<FlowRow["status"]>("draft");
   const [executionCount, setExecutionCount] = useState(0);
+  const [initialFallbackPolicy, setInitialFallbackPolicy] = useState<
+    FlowRow["fallback_policy"] | null
+  >(null);
 
   useEffect(() => {
     const id = params.id;
@@ -67,6 +70,7 @@ export default function EditSimpleMenuFlowPage() {
         setInitialActivate(flow.status === "active");
         setInitialStatus(flow.status);
         setExecutionCount(flow.execution_count ?? 0);
+        setInitialFallbackPolicy(flow.fallback_policy ?? null);
       } catch (err) {
         console.error(err);
         toast.error(t("loadError"));
@@ -95,6 +99,7 @@ export default function EditSimpleMenuFlowPage() {
       initialActivate={initialActivate}
       initialStatus={initialStatus}
       initialExecutionCount={executionCount}
+      initialFallbackPolicy={initialFallbackPolicy}
     />
   );
 }

@@ -290,8 +290,18 @@ export interface FlowFallbackPolicy {
   on_unknown_reply: "reprompt" | "handoff" | "ignore";
   /** Max reprompts before applying `on_exhaust`. */
   max_reprompts: number;
-  /** Stale-run sweep cutoff. */
+  /**
+   * Long safety-net cutoff (hours). Used when `on_idle_minutes` is
+   * unset / null so older flows keep their previous behaviour.
+   */
   on_timeout_hours: number;
+  /**
+   * Preferred idle cutoff in minutes. When set (> 0), the stale-run
+   * cron ends the active run after this many minutes without
+   * advancing — freeing the contact to trigger the flow again.
+   * `null` = fall back to `on_timeout_hours`.
+   */
+  on_idle_minutes: number | null;
   /** What to do once max_reprompts has been hit. */
   on_exhaust: "handoff" | "end";
 }
@@ -300,6 +310,7 @@ export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
   on_unknown_reply: "reprompt",
   max_reprompts: 2,
   on_timeout_hours: 24,
+  on_idle_minutes: null,
   on_exhaust: "handoff",
 };
 

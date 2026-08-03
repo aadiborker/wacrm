@@ -52,11 +52,40 @@ export function resolveFallbackPolicy(
       typeof r.on_timeout_hours === "number" && r.on_timeout_hours > 0
         ? r.on_timeout_hours
         : DEFAULT_FALLBACK_POLICY.on_timeout_hours,
+    on_idle_minutes: resolveIdleMinutesField(r.on_idle_minutes),
     on_exhaust:
       r.on_exhaust === "handoff" || r.on_exhaust === "end"
         ? r.on_exhaust
         : DEFAULT_FALLBACK_POLICY.on_exhaust,
   };
+}
+
+/**
+ * Normalize the optional idle-minutes field. `null` / missing / 0 /
+ * invalid → `null` (cron falls back to `on_timeout_hours`).
+ */
+function resolveIdleMinutesField(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+    return null;
+  }
+  return Math.floor(raw);
+}
+
+/**
+ * Effective idle cutoff in minutes for the stale-run sweep.
+ * Prefers `on_idle_minutes` when set; otherwise `on_timeout_hours * 60`.
+ */
+export function resolveIdleTimeoutMinutes(
+  policy: FlowFallbackPolicy,
+): number {
+  if (
+    typeof policy.on_idle_minutes === "number" &&
+    policy.on_idle_minutes > 0
+  ) {
+    return policy.on_idle_minutes;
+  }
+  return Math.max(1, Math.round(policy.on_timeout_hours * 60));
 }
 
 /**

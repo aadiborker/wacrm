@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   decideFallback,
   resolveFallbackPolicy,
+  resolveIdleTimeoutMinutes,
 } from "./fallback";
 import { DEFAULT_FALLBACK_POLICY, type FlowFallbackPolicy } from "./types";
 
@@ -56,12 +57,52 @@ describe("resolveFallbackPolicy", () => {
       DEFAULT_FALLBACK_POLICY,
     );
   });
+
+  it("accepts on_idle_minutes and rejects invalid values", () => {
+    expect(resolveFallbackPolicy({ on_idle_minutes: 30 }).on_idle_minutes).toBe(
+      30,
+    );
+    expect(resolveFallbackPolicy({ on_idle_minutes: 2.9 }).on_idle_minutes).toBe(
+      2,
+    );
+    expect(resolveFallbackPolicy({ on_idle_minutes: 0 }).on_idle_minutes).toBe(
+      null,
+    );
+    expect(resolveFallbackPolicy({ on_idle_minutes: -1 }).on_idle_minutes).toBe(
+      null,
+    );
+    expect(
+      resolveFallbackPolicy({ on_idle_minutes: null }).on_idle_minutes,
+    ).toBe(null);
+  });
+});
+
+describe("resolveIdleTimeoutMinutes", () => {
+  it("uses on_idle_minutes when set", () => {
+    expect(
+      resolveIdleTimeoutMinutes({
+        ...DEFAULT_FALLBACK_POLICY,
+        on_idle_minutes: 15,
+      }),
+    ).toBe(15);
+  });
+
+  it("falls back to on_timeout_hours in minutes", () => {
+    expect(
+      resolveIdleTimeoutMinutes({
+        ...DEFAULT_FALLBACK_POLICY,
+        on_timeout_hours: 2,
+        on_idle_minutes: null,
+      }),
+    ).toBe(120);
+  });
 });
 
 const POLICY_REPROMPT_2_HANDOFF: FlowFallbackPolicy = {
   on_unknown_reply: "reprompt",
   max_reprompts: 2,
   on_timeout_hours: 24,
+  on_idle_minutes: null,
   on_exhaust: "handoff",
 };
 

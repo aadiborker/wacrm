@@ -36,7 +36,13 @@ import {
   type SimpleMenuSpec,
 } from "@/lib/flows/simple-menu";
 import { SimpleMenuCanvasPreview } from "@/components/flows/simple-menu-canvas-preview";
-import type { FlowRow } from "@/lib/flows/types";
+import { IdleResetField } from "@/components/flows/forms/idle-reset-field";
+import { resolveFallbackPolicy } from "@/lib/flows/fallback";
+import {
+  DEFAULT_FALLBACK_POLICY,
+  type FlowFallbackPolicy,
+  type FlowRow,
+} from "@/lib/flows/types";
 
 type Step = 1 | 2 | 3;
 type FlowStatus = FlowRow["status"];
@@ -61,6 +67,7 @@ export function SimpleMenuWizard({
   initialActivate = true,
   initialStatus = "draft",
   initialExecutionCount = 0,
+  initialFallbackPolicy = null,
 }: {
   /** When set, saves update this flow instead of creating a new one. */
   existingFlowId?: string | null;
@@ -68,6 +75,7 @@ export function SimpleMenuWizard({
   initialActivate?: boolean;
   initialStatus?: FlowStatus;
   initialExecutionCount?: number;
+  initialFallbackPolicy?: FlowFallbackPolicy | null;
 } = {}) {
   const router = useRouter();
   const t = useTranslations("Flows.simpleMenu");
@@ -78,6 +86,15 @@ export function SimpleMenuWizard({
   );
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fallbackPolicy, setFallbackPolicy] = useState<FlowFallbackPolicy>(() =>
+    resolveFallbackPolicy(
+      initialFallbackPolicy ?? {
+        ...DEFAULT_FALLBACK_POLICY,
+        // Shop menus usually want a short idle reset, not 24h.
+        on_idle_minutes: 30,
+      },
+    ),
+  );
   const [statusBusy, setStatusBusy] = useState(false);
   const [activate, setActivate] = useState(initialActivate);
   /** Set after first Save draft — further saves update this flow. */
@@ -110,6 +127,7 @@ export function SimpleMenuWizard({
           trigger_type: built.trigger_type,
           trigger_config: built.trigger_config,
           entry_node_id: built.entry_node_id,
+          fallback_policy: fallbackPolicy,
           nodes: built.nodes,
         }),
       });
@@ -123,7 +141,11 @@ export function SimpleMenuWizard({
     const res = await fetch("/api/flows", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ simple_menu: spec, activate: false }),
+      body: JSON.stringify({
+        simple_menu: spec,
+        activate: false,
+        fallback_policy: fallbackPolicy,
+      }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -567,6 +589,11 @@ export function SimpleMenuWizard({
               className="bg-muted"
             />
           </div>
+          <IdleResetField
+            policy={fallbackPolicy}
+            onChange={setFallbackPolicy}
+            className="rounded-lg border border-border bg-muted/40 px-3 py-2.5"
+          />
         </section>
       )}
 

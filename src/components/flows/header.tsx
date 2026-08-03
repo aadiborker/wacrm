@@ -41,6 +41,7 @@ import {
   useFlowEditor,
   type BuilderState,
 } from "./flow-editor-state";
+import { IdleResetField } from "./forms/idle-reset-field";
 
 export function EditorHeader() {
   const router = useRouter();
@@ -165,6 +166,13 @@ export function EditorHeader() {
         placeholder="Add a short description (internal — customers don't see this)"
         aria-label="Flow description"
         className="w-full rounded-md border border-transparent bg-transparent px-2.5 py-1.5 text-sm leading-relaxed text-muted-foreground outline-none transition-colors placeholder:text-muted-foreground/60 hover:bg-muted/50 focus:border-primary focus:bg-transparent focus:text-foreground"
+      />
+      <IdleResetField
+        policy={state.fallback_policy}
+        onChange={(fallback_policy) =>
+          setState((s) => ({ ...s, fallback_policy }))
+        }
+        className="rounded-lg border border-border bg-muted/30 px-3 py-2.5"
       />
     </div>
   );
