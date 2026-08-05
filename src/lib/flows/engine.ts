@@ -111,6 +111,24 @@ export function matchesKeywordTrigger(
   return false;
 }
 
+/**
+ * True when an inbound text should abandon the active run and start
+ * this flow from the top (customer re-sent the start keyword mid-menu).
+ * Idle timeout (cron) is unchanged — this is only for explicit restarts.
+ */
+export function shouldRestartOnKeyword(args: {
+  text: string;
+  flow: Pick<FlowRow, "status" | "trigger_type" | "trigger_config">;
+}): boolean {
+  const { text, flow } = args;
+  if (flow.status !== "active") return false;
+  if (flow.trigger_type !== "keyword") return false;
+  return matchesKeywordTrigger(
+    text,
+    flow.trigger_config as KeywordTriggerConfig,
+  );
+}
+
 /** Nodes that advance to a next_node_key without waiting for input. */
 export function isAutoAdvancing(node_type: string): boolean {
   return (
@@ -860,8 +878,46 @@ export async function dispatchInboundToFlows(
           outcome: "duplicate_inbound_ignored",
         };
       }
-      // One SELECT for the whole flow's nodes — advance loop is now
-      // in-memory. See loadAllNodes.
+
+      // Mid-conversation keyword restart: if they send the flow's
+      // start word again (e.g. "Hi"), end this run and start fresh.
+      // Idle-minute timeout (cron) is separate and unchanged.
+      if (input.message.kind === "text") {
+        const activeFlow = await loadFlow(db, activeRun.flow_id);
+        if (
+          activeFlow &&
+          shouldRestartOnKeyword({
+            text: input.message.text,
+            flow: activeFlow,
+          })
+        ) {
+          await logEvent(db, activeRun.id, "completed", activeRun.current_node_key, {
+            reason: "keyword_restart",
+            text_length: input.message.text.length,
+          });
+          await endRun(db, activeRun.id, "completed", "keyword_restart");
+          const nodes = await loadAllNodes(db, activeFlow.id);
+          return startNewRun(db, activeFlow, input, nodes);
+        }
+
+        // Different flow's keyword → switch bots mid-chat.
+        const otherFlow = await findEntryFlow(
+          db,
+          input.accountId,
+          input.message,
+          input.isFirstInboundMessage,
+        );
+        if (otherFlow && otherFlow.id !== activeRun.flow_id && otherFlow.entry_node_id) {
+          await logEvent(db, activeRun.id, "completed", activeRun.current_node_key, {
+            reason: "keyword_switch",
+            to_flow_id: otherFlow.id,
+          });
+          await endRun(db, activeRun.id, "completed", "keyword_switch");
+          const nodes = await loadAllNodes(db, otherFlow.id);
+          return startNewRun(db, otherFlow, input, nodes);
+        }
+      }
+
       const nodes = await loadAllNodes(db, activeRun.flow_id);
       return handleReplyForActiveRun(db, activeRun, input.message, nodes);
     }

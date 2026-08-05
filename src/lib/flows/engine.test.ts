@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   matchReplyId,
   matchesKeywordTrigger,
+  shouldRestartOnKeyword,
   isAutoAdvancing,
   isSuspending,
   isTerminal,
@@ -140,6 +141,48 @@ describe("matchesKeywordTrigger", () => {
     const cfg = { keywords: ["", "support", ""] };
     expect(matchesKeywordTrigger("support center", cfg)).toBe(true);
     expect(matchesKeywordTrigger("nope", cfg)).toBe(false);
+  });
+});
+
+describe("shouldRestartOnKeyword", () => {
+  const keywordFlow = {
+    status: "active" as const,
+    trigger_type: "keyword" as const,
+    trigger_config: { keywords: ["Hi"] },
+  };
+
+  it("restarts when the customer re-sends the start keyword", () => {
+    expect(
+      shouldRestartOnKeyword({ text: "Hi", flow: keywordFlow }),
+    ).toBe(true);
+    expect(
+      shouldRestartOnKeyword({ text: "hi there", flow: keywordFlow }),
+    ).toBe(true);
+  });
+
+  it("does not restart for unrelated text", () => {
+    expect(
+      shouldRestartOnKeyword({ text: "option 1", flow: keywordFlow }),
+    ).toBe(false);
+  });
+
+  it("does not restart for draft / non-keyword flows", () => {
+    expect(
+      shouldRestartOnKeyword({
+        text: "Hi",
+        flow: { ...keywordFlow, status: "draft" },
+      }),
+    ).toBe(false);
+    expect(
+      shouldRestartOnKeyword({
+        text: "Hi",
+        flow: {
+          status: "active",
+          trigger_type: "manual",
+          trigger_config: {},
+        },
+      }),
+    ).toBe(false);
   });
 });
 
