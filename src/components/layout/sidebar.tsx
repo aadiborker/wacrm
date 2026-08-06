@@ -187,13 +187,23 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* Logo row. On mobile we put a close button here; on desktop the
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <Link href="/dashboard" className="flex min-w-0 items-center gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <MessageSquare className="h-4 w-4" />
             </div>
-            <span className="text-sm font-semibold text-foreground">
-              {t("title")}
-            </span>
+            <div className="min-w-0 leading-tight">
+              <div
+                className="truncate text-sm font-semibold text-foreground"
+                title={account?.name || t("title")}
+              >
+                {account?.name || t("title")}
+              </div>
+              {account?.name ? (
+                <div className="truncate text-[10px] font-medium text-muted-foreground">
+                  {t("title")}
+                </div>
+              ) : null}
+            </div>
           </Link>
           <button
             type="button"

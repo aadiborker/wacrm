@@ -36,7 +36,7 @@ export function SettingsOverview({
 }: {
   onSelect: (section: SettingsSection) => void;
 }) {
-  const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers } =
+  const { user, profile, account, accountId, accountRole, defaultCurrency, canManageMembers } =
     useAuth();
   const { mode, theme } = useTheme();
   const t = useTranslations('Settings.overview');
@@ -159,6 +159,11 @@ export function SettingsOverview({
     subtitle: ReactNode;
   }[] = [
     {
+      section: 'company',
+      loading: false,
+      subtitle: account?.name || t('notSetup'),
+    },
+    {
       section: 'whatsapp',
       loading: whatsappLoading,
       subtitle: !whatsapp?.configured ? (
@@ -238,6 +243,11 @@ export function SettingsOverview({
           {profile?.email ? (
             <div className="truncate text-sm text-muted-foreground">
               {profile.email}
+            </div>
+          ) : null}
+          {account?.name ? (
+            <div className="mt-1 truncate text-xs text-muted-foreground">
+              {account.name}
             </div>
           ) : null}
         </div>

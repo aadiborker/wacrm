@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import {
   Card,
@@ -36,6 +37,7 @@ function SignupPageInner() {
   const inviteToken = searchParams.get("invite");
 
   const [fullName, setFullName] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -58,6 +60,12 @@ function SignupPageInner() {
       return;
     }
 
+    // New workspaces need a company name; invitees join an existing one.
+    if (!inviteToken && !companyName.trim()) {
+      setError("Company name is required");
+      return;
+    }
+
     setLoading(true);
 
     // If we have an invite token, point Supabase's verification
@@ -74,6 +82,11 @@ function SignupPageInner() {
       options: {
         data: {
           full_name: fullName,
+          // Seed accounts.name via handle_new_user (migration 038).
+          // Invitees skip this — they join an existing account.
+          ...(!inviteToken && companyName.trim()
+            ? { company_name: companyName.trim() }
+            : {}),
         },
         ...(emailRedirectTo ? { emailRedirectTo } : {}),
       },
@@ -170,6 +183,28 @@ function SignupPageInner() {
               />
             </div>
 
+            {!inviteToken && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="companyName" className="text-muted-foreground">
+                  Company
+                </Label>
+                <Input
+                  id="companyName"
+                  type="text"
+                  placeholder="e.g. Pashupathi Lights"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  required
+                  maxLength={80}
+                  className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Shown in the sidebar so you know which workspace you&apos;re
+                  in. Examples: ReplyFlow, The Web People, Pashupathi Lights.
+                </p>
+              </div>
+            )}
+
             <div className="flex flex-col gap-2">
               <Label htmlFor="email" className="text-muted-foreground">
                 Email
@@ -189,9 +224,8 @@ function SignupPageInner() {
               <Label htmlFor="password" className="text-muted-foreground">
                 Password
               </Label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="At least 6 characters"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -204,9 +238,8 @@ function SignupPageInner() {
               <Label htmlFor="confirmPassword" className="text-muted-foreground">
                 Confirm password
               </Label>
-              <Input
+              <PasswordInput
                 id="confirmPassword"
-                type="password"
                 placeholder="Repeat your password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}

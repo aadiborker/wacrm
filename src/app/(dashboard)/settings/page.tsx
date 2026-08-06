@@ -16,6 +16,7 @@ import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
+import { CompanySettings } from '@/components/settings/company-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
@@ -42,9 +43,10 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency } = useAuth();
+  const { defaultCurrency, account } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
+  const accountNameHint = account?.name ?? undefined;
 
   // The URL (`?tab=`) is the single source of truth for the active
   // section — deep-linkable, and it keeps the existing links in the
@@ -65,8 +67,9 @@ function SettingsPageInner() {
     () => ({
       appearance: mode.charAt(0).toUpperCase() + mode.slice(1),
       deals: defaultCurrency,
+      company: accountNameHint,
     }),
-    [mode, defaultCurrency],
+    [mode, defaultCurrency, accountNameHint],
   );
 
   const panel: Record<SettingsSection, ReactNode> = {
@@ -74,6 +77,7 @@ function SettingsPageInner() {
     profile: <ProfileForm />,
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
+    company: <CompanySettings />,
     whatsapp: <WhatsAppConfig />,
     templates: <TemplateManager />,
     'quick-replies': <QuickRepliesManager />,

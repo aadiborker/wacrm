@@ -1592,6 +1592,7 @@
       "profile": "Your profile",
       "security": "Login & security",
       "appearance": "Appearance",
+      "company": "Company",
       "whatsapp": "WhatsApp",
       "templates": "Templates",
       "quick-replies": "Quick replies",
@@ -1669,6 +1670,19 @@
     "security": {
       "title": "Login & security",
       "description": "Change your password and sign out of your devices. These keep your account safe."
+    },
+    "company": {
+      "title": "Company",
+      "description": "Your workspace name — shown in the sidebar so everyone knows which company they’re in.",
+      "cardTitle": "Company name",
+      "cardDesc": "Examples: ReplyFlow, The Web People, Pashupathi Lights.",
+      "nameLabel": "Company name",
+      "namePlaceholder": "e.g. Pashupathi Lights",
+      "adminOnly": "Only admins and owners can rename the company.",
+      "save": "Save",
+      "emptyError": "Company name can’t be empty",
+      "saveFailed": "Couldn’t save company name",
+      "saveSuccess": "Company name updated"
     },
     "apiKeys": {
       "title": "API keys",
