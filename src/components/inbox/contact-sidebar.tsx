@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
+import { ContactAddedBy } from "@/components/contacts/contact-added-by";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -29,7 +30,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
-  const { accountId } = useAuth();
+  const { accountId, canEditSettings } = useAuth();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
@@ -154,6 +155,16 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               <p className="text-xs text-muted-foreground">{contact.company}</p>
             )}
           </div>
+
+          {canEditSettings && (
+            <div className="mt-3">
+              <ContactAddedBy
+                userId={contact.user_id}
+                createdSource={contact.created_source}
+                createdAt={contact.created_at}
+              />
+            </div>
+          )}
 
           {/* Phone */}
           <div className="mt-4 space-y-2">

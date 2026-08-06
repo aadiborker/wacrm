@@ -171,6 +171,7 @@ export function ContactForm({
             phone: phone.trim(),
             email: email.trim() || null,
             company: company.trim() || null,
+            created_source: 'manual',
           })
           .select('id')
           .single();

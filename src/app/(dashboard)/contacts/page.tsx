@@ -54,6 +54,9 @@ import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
+import {
+  ContactAddedBy,
+} from '@/components/contacts/contact-added-by';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
@@ -66,6 +69,7 @@ interface ContactWithTags extends Contact {
 
 export default function ContactsPage() {
   const t = useTranslations('Contacts.page');
+  const tAddedBy = useTranslations('Contacts.addedBy');
   const supabase = createClient();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
@@ -77,6 +81,8 @@ export default function ContactsPage() {
   const [totalCount, setTotalCount] = useState(0);
   // Tag filter — contacts shown must have ANY of these tags (OR).
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  /** Admin-only: user_id → display name for the Added by column. */
+  const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -206,8 +212,30 @@ export default function ContactsPage() {
     }));
 
     setContacts(enriched);
+
+    // Admin+: resolve who added each contact (batch profile lookup).
+    if (canEditSettings) {
+      const userIds = [...new Set(enriched.map((c) => c.user_id).filter(Boolean))];
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, full_name, email')
+          .in('user_id', userIds);
+        if (seq !== fetchSeq.current) return;
+        const map: Record<string, string> = {};
+        for (const p of profiles ?? []) {
+          map[p.user_id] = p.full_name?.trim() || p.email || tAddedBy('unknown');
+        }
+        setCreatorNames(map);
+      } else {
+        setCreatorNames({});
+      }
+    } else {
+      setCreatorNames({});
+    }
+
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap, t]);
+  }, [supabase, page, search, selectedTagIds, tagsMap, t, canEditSettings, tAddedBy]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -546,6 +574,11 @@ export default function ContactsPage() {
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.company')}</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
+              {canEditSettings && (
+                <TableHead className="text-muted-foreground hidden lg:table-cell">
+                  {t('tableColumns.addedBy')}
+                </TableHead>
+              )}
               <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.createdAt')}</TableHead>
               <TableHead className="text-muted-foreground w-12" />
             </TableRow>
@@ -553,7 +586,7 @@ export default function ContactsPage() {
           <TableBody>
             {loading ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={canEditSettings ? 9 : 8} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">{t('loading')}</p>
@@ -562,7 +595,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={canEditSettings ? 9 : 8} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
@@ -637,6 +670,16 @@ export default function ContactsPage() {
                       )}
                     </div>
                   </TableCell>
+                  {canEditSettings && (
+                    <TableCell className="hidden lg:table-cell">
+                      <ContactAddedBy
+                        userId={contact.user_id}
+                        createdSource={contact.created_source}
+                        actorName={creatorNames[contact.user_id] ?? null}
+                        compact
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="text-muted-foreground text-xs hidden lg:table-cell">
                     {new Date(contact.created_at).toLocaleDateString('en-US', {
                       month: 'short',

@@ -133,6 +133,7 @@ export async function findOrCreateContact(
       name: input.name ?? sanitized,
       email: input.email ?? null,
       company: input.company ?? null,
+      created_source: 'api',
     })
     .select('id')
     .single();

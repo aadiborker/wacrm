@@ -41,6 +41,7 @@ import {
   LayoutTemplate,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { ContactAddedBy } from '@/components/contacts/contact-added-by';
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -57,7 +58,7 @@ export function ContactDetailView({
 }: ContactDetailViewProps) {
   const t = useTranslations('Contacts.detailView');
   const supabase = createClient();
-  const { accountId, defaultCurrency } = useAuth();
+  const { accountId, defaultCurrency, canEditSettings } = useAuth();
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
@@ -487,6 +488,13 @@ export function ContactDetailView({
               {/* Details Tab */}
               <TabsContent value="details" className="flex-1 overflow-y-auto px-4 py-3">
                 <div className="space-y-3">
+                  {canEditSettings && (
+                    <ContactAddedBy
+                      userId={contact.user_id}
+                      createdSource={contact.created_source}
+                      createdAt={contact.created_at}
+                    />
+                  )}
                   <div className="space-y-1.5">
                     <Label className="text-muted-foreground text-xs">{t('name')}</Label>
                     <Input

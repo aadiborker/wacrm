@@ -264,6 +264,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         account_id: accountId,
         phone,
         name: uniqueByPhone.get(phone)?.name ?? null,
+        created_source: 'broadcast' as const,
       }));
 
     const INSERT_CHUNK = 200;

@@ -108,6 +108,17 @@ export interface Contact {
   email?: string;
   company?: string;
   avatar_url?: string;
+  /**
+   * How the contact was created (migration 039). Null on legacy rows.
+   * Used with `user_id` so admins can see who/what added the contact.
+   */
+  created_source?:
+    | "manual"
+    | "import"
+    | "whatsapp"
+    | "api"
+    | "broadcast"
+    | null;
   created_at: string;
   updated_at: string;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the

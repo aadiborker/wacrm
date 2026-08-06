@@ -298,6 +298,7 @@
         "email": "Email",
         "company": "Company",
         "tags": "Tags",
+        "addedBy": "Added by",
         "createdAt": "Created"
       },
       "loading": "Loading contacts...",
@@ -415,6 +416,17 @@
       "toastCustomFieldsFailed": "Failed to save custom fields",
       "toastTemplateSent": "Template \"{name}\" sent",
       "toastTemplateFailed": "Failed to send template: {reason}"
+    },
+    "addedBy": {
+      "label": "Added by",
+      "loading": "…",
+      "unknown": "Unknown",
+      "viaWhatsApp": "WhatsApp",
+      "inboundMessage": "Inbound message",
+      "viaApi": "API",
+      "csvImport": "CSV import",
+      "broadcastAudience": "Broadcast audience",
+      "addedManually": "Added manually"
     },
     "importModal": {
       "title": "Import Contacts",
