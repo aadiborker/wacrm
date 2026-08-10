@@ -17,6 +17,7 @@ import {
   parseVariableMappings,
   resolveVariables,
 } from './variables';
+import { undeliveredRetryHours, undeliveredSentBeforeIso } from './undelivered';
 
 const SEND_BATCH_SIZE = 10;
 const SEND_BATCH_DELAY_MS = 1000;
@@ -37,6 +38,10 @@ export interface ExecuteBroadcastOptions {
   recipientIds?: string[];
   /** When true, only recipients with status `failed` are retried. */
   onlyFailed?: boolean;
+  /** When true, only stale `sent` rows with no delivery are retried. */
+  onlyUndelivered?: boolean;
+  /** Override the stale-sent threshold (hours). */
+  undeliveredOlderThanHours?: number;
 }
 
 /**
@@ -107,6 +112,13 @@ export async function executeBroadcastSend(
 
   if (options.onlyFailed) {
     recipientQuery = recipientQuery.eq('status', 'failed');
+  }
+  if (options.onlyUndelivered) {
+    const hours = options.undeliveredOlderThanHours ?? undeliveredRetryHours();
+    recipientQuery = recipientQuery
+      .eq('status', 'sent')
+      .is('delivered_at', null)
+      .lt('sent_at', undeliveredSentBeforeIso(hours));
   }
   if (options.recipientIds?.length) {
     recipientQuery = recipientQuery.in('id', options.recipientIds);

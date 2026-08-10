@@ -195,6 +195,15 @@ export function ContactForm({
       }
 
       toast.success(isEdit ? t('toastSuccessEdit') : t('toastSuccessAdd'));
+      if (contactId) {
+        void fetch(`/api/account/contacts/${contactId}/notify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: isEdit ? 'contact.updated' : 'contact.created',
+          }),
+        });
+      }
       onOpenChange(false);
       onSaved();
     } catch (err: unknown) {

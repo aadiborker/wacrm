@@ -16,6 +16,7 @@ import {
   resolveAuditUserId,
   ContactError,
 } from '@/lib/api/v1/contacts';
+import { dispatchContactWebhook } from '@/lib/contacts/webhook-dispatch';
 
 export async function GET(
   request: Request,
@@ -92,6 +93,7 @@ export async function PATCH(
     }
 
     const contact = await getContactById(ctx.supabase, ctx.accountId, id);
+    await dispatchContactWebhook(ctx.accountId, id, 'contact.updated');
     return ok(contact);
   } catch (err) {
     if (err instanceof ContactError) {

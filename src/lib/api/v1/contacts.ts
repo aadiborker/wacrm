@@ -10,6 +10,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
+import { dispatchContactWebhook } from '@/lib/contacts/webhook-dispatch';
 import { resolveImportTagIds } from '@/lib/contacts/resolve-import-tags';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
@@ -148,6 +149,8 @@ export async function findOrCreateContact(
     console.error('[api/v1/contacts] create error:', error);
     throw new ContactError('Failed to create contact', 500);
   }
+
+  await dispatchContactWebhook(accountId, created.id, 'contact.created');
 
   return { id: created.id, created: true };
 }

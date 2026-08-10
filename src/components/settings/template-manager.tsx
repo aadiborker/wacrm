@@ -12,14 +12,16 @@ import {
   Pencil,
   RotateCcw,
   Upload,
+  BarChart3,
 } from 'lucide-react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import {
   uploadAccountMedia,
   MEDIA_MAX_BYTES_BY_KIND,
 } from '@/lib/storage/upload-media';
 import { useAuth } from '@/hooks/use-auth';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -507,6 +509,13 @@ export function TemplateManager() {
         description={t('description')}
         action={
           <div className="flex items-center gap-2">
+            <Link
+              href="/templates/analytics"
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              <BarChart3 className="size-4" />
+              {t('viewAnalytics')}
+            </Link>
             <Button
               variant="outline"
               onClick={handleSyncFromMeta}

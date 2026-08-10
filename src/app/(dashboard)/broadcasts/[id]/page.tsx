@@ -40,6 +40,10 @@ import {
   getRecipientStatus,
 } from '@/lib/broadcast-status';
 import { useTranslations } from 'next-intl';
+import {
+  DEFAULT_UNDELIVERED_RETRY_HOURS,
+  undeliveredSentBeforeIso,
+} from '@/lib/broadcasts/undelivered';
 
 interface StatCardProps {
   label: string;
@@ -122,6 +126,17 @@ const RECIPIENT_STATUSES: readonly RecipientStatus[] = [
   'failed',
 ];
 
+type RecipientFilter = RecipientStatus | 'all' | 'undelivered';
+
+function isStaleUndelivered(
+  recipient: BroadcastRecipient,
+  hours = DEFAULT_UNDELIVERED_RETRY_HOURS,
+): boolean {
+  if (recipient.status !== 'sent' || recipient.delivered_at) return false;
+  if (!recipient.sent_at) return false;
+  return recipient.sent_at < undeliveredSentBeforeIso(hours);
+}
+
 /**
  * CSV export helper — RFC 4180 quoting. Quote every field so
  * commas/newlines/quotes round-trip cleanly.
@@ -154,12 +169,11 @@ export default function BroadcastDetailPage() {
   const [recipients, setRecipients] = useState<BroadcastRecipient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<RecipientStatus | 'all'>(
-    'all',
-  );
+  const [statusFilter, setStatusFilter] = useState<RecipientFilter>('all');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [retryingUndelivered, setRetryingUndelivered] = useState(false);
 
   async function fetchData() {
     try {
@@ -207,13 +221,18 @@ export default function BroadcastDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [broadcast?.status, broadcastId]);
 
-  const filteredRecipients = useMemo(
-    () =>
-      statusFilter === 'all'
-        ? recipients
-        : recipients.filter((r) => r.status === statusFilter),
-    [recipients, statusFilter],
+  const undeliveredCount = useMemo(
+    () => recipients.filter((r) => isStaleUndelivered(r)).length,
+    [recipients],
   );
+
+  const filteredRecipients = useMemo(() => {
+    if (statusFilter === 'all') return recipients;
+    if (statusFilter === 'undelivered') {
+      return recipients.filter((r) => isStaleUndelivered(r));
+    }
+    return recipients.filter((r) => r.status === statusFilter);
+  }, [recipients, statusFilter]);
 
   function handleExport() {
     if (!broadcast) return;
@@ -287,6 +306,37 @@ export default function BroadcastDetailPage() {
       );
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function handleRetryUndelivered() {
+    if (!broadcast || undeliveredCount === 0) return;
+    setRetryingUndelivered(true);
+    try {
+      const res = await fetch(
+        `/api/broadcasts/${broadcastId}/retry-undelivered`,
+        { method: 'POST' },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Retry undelivered failed');
+      }
+      toast.success(
+        t('toastRetryUndeliveredSuccess', {
+          sent: data.sent ?? 0,
+          failed: data.failed ?? 0,
+        }),
+      );
+      setLoading(true);
+      await fetchData();
+    } catch (err) {
+      toast.error(
+        t('toastRetryUndeliveredFailed', {
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }),
+      );
+    } finally {
+      setRetryingUndelivered(false);
     }
   }
 
@@ -378,6 +428,29 @@ export default function BroadcastDetailPage() {
                   <RotateCcw className="h-3.5 w-3.5" />
                 )}
                 {retrying ? t('retrying') : t('retryFailed')}
+              </Button>
+            )}
+          {undeliveredCount > 0 &&
+            broadcast.status !== 'sending' &&
+            broadcast.status !== 'scheduled' && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={retryingUndelivered}
+                onClick={() => void handleRetryUndelivered()}
+                title={t('retryUndeliveredHint', {
+                  hours: DEFAULT_UNDELIVERED_RETRY_HOURS,
+                })}
+                className="border-border text-muted-foreground"
+              >
+                {retryingUndelivered ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                {retryingUndelivered
+                  ? t('retryingUndelivered')
+                  : t('retryUndelivered', { count: undeliveredCount })}
               </Button>
             )}
 
@@ -496,7 +569,9 @@ export default function BroadcastDetailPage() {
                 <Filter className="h-3.5 w-3.5" />
                 {statusFilter === 'all'
                   ? t('allStatuses')
-                  : tStatus(getRecipientStatus(statusFilter).label)}
+                  : statusFilter === 'undelivered'
+                    ? t('filterUndelivered')
+                    : tStatus(getRecipientStatus(statusFilter).label)}
                 <ChevronDown className="h-3 w-3" />
               </DropdownMenuTrigger>
               <DropdownMenuContent className="border-border bg-popover">
@@ -521,6 +596,16 @@ export default function BroadcastDetailPage() {
                     {tStatus(getRecipientStatus(s).label)}
                   </DropdownMenuItem>
                 ))}
+                <DropdownMenuItem
+                  onClick={() => setStatusFilter('undelivered')}
+                  className={
+                    statusFilter === 'undelivered'
+                      ? 'text-primary'
+                      : 'text-popover-foreground'
+                  }
+                >
+                  {t('filterUndelivered')}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 

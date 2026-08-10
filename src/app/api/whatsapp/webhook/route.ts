@@ -1052,6 +1052,14 @@ async function findOrCreateContact(
         .from('contacts')
         .update({ name, updated_at: new Date().toISOString() })
         .eq('id', existingContact.id)
+      const { dispatchContactWebhook } = await import(
+        '@/lib/contacts/webhook-dispatch'
+      )
+      await dispatchContactWebhook(
+        accountId,
+        existingContact.id,
+        'contact.updated',
+      )
     }
     return { contact: existingContact, wasCreated: false }
   }
@@ -1084,6 +1092,11 @@ async function findOrCreateContact(
     console.error('Error creating contact:', createError)
     return null
   }
+
+  const { dispatchContactWebhook } = await import(
+    '@/lib/contacts/webhook-dispatch'
+  )
+  await dispatchContactWebhook(accountId, newContact.id, 'contact.created')
 
   return { contact: newContact, wasCreated: true }
 }
