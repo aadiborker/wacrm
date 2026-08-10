@@ -63,6 +63,8 @@ interface WhatsAppMessage {
 
 interface WhatsAppWebhookEntry {
   id: string
+  /** Unix seconds — when Meta triggered this webhook batch. */
+  time?: number | string
   changes: Array<{
     value: {
       messaging_product: string
@@ -233,7 +235,11 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       // don't try to read message-shaped fields off a template event.
       if (isTemplateWebhookField(change.field)) {
         await handleTemplateWebhookChange(
-          { field: change.field, value: change.value as unknown },
+          {
+            field: change.field,
+            value: change.value as unknown,
+            triggeredAt: entry.time,
+          },
           supabaseAdmin(),
         )
         continue

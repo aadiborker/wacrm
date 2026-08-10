@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { metaTimestampToIso } from '@/lib/template-format'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import type { TemplateButton, TemplateSampleValues } from '@/types'
@@ -48,6 +49,8 @@ interface MetaTemplate {
   category: string
   components?: MetaTemplateComponent[]
   quality_score?: { score?: string } | string
+  /** Meta's last modification time — best available proxy for approval on sync. */
+  last_updated_time?: string | number
 }
 
 function normalizeCategory(
@@ -181,7 +184,7 @@ export async function POST() {
     const metaTemplates: MetaTemplate[] = []
     let nextUrl:
       | string
-      | null = `${META_API_BASE}/${config.waba_id}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
+      | null = `${META_API_BASE}/${config.waba_id}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score,last_updated_time`
     const PAGE_CAP = 20
     let pageCount = 0
 
@@ -234,7 +237,7 @@ export async function POST() {
 
       const { data: existing, error: lookupErr } = await supabase
         .from('message_templates')
-        .select('id, status, approved_at, last_submitted_at, created_at')
+        .select('id, status, approved_at, last_submitted_at, created_at, updated_at')
         .eq('account_id', accountId)
         .eq('name', t.name)
         .eq('language', t.language)
@@ -250,6 +253,7 @@ export async function POST() {
       }
 
       const normalizedStatus = normalizeStatus(t.status)
+      const metaLastUpdatedIso = metaTimestampToIso(t.last_updated_time)
       const row: Record<string, unknown> = {
         // Account tenancy + user audit, same split as the submit
         // route. account_id is NOT NULL on message_templates
@@ -272,11 +276,24 @@ export async function POST() {
         updated_at: new Date().toISOString(),
       }
 
-      if (
-        normalizedStatus === 'APPROVED' &&
-        (existing?.status !== 'APPROVED' || !existing?.approved_at)
-      ) {
-        row.approved_at = new Date().toISOString()
+      if (normalizedStatus === 'APPROVED' && metaLastUpdatedIso) {
+        const existingApprovedAt = existing?.approved_at as string | undefined
+        const existingUpdatedAt = existing?.updated_at as string | undefined
+        const syncStamped =
+          existingApprovedAt &&
+          existingUpdatedAt &&
+          Math.abs(
+            new Date(existingApprovedAt).getTime() -
+              new Date(existingUpdatedAt).getTime(),
+          ) < 120_000
+
+        if (
+          !existingApprovedAt ||
+          existing?.status !== 'APPROVED' ||
+          syncStamped
+        ) {
+          row.approved_at = metaLastUpdatedIso
+        }
       }
 
       // Templates pulled from Meta never went through our submit route —
@@ -284,6 +301,14 @@ export async function POST() {
       // both sent + approved.
       if (existing?.id && !existing.last_submitted_at && existing.created_at) {
         row.last_submitted_at = existing.created_at as string
+      }
+
+      if (
+        !existing?.id &&
+        normalizedStatus === 'PENDING' &&
+        metaLastUpdatedIso
+      ) {
+        row.last_submitted_at = metaLastUpdatedIso
       }
 
       if (existing?.id) {
@@ -301,14 +326,13 @@ export async function POST() {
           updated++
         }
       } else {
-        if (
-          normalizedStatus === 'APPROVED' &&
-          !row.approved_at
-        ) {
-          row.approved_at = new Date().toISOString()
+        if (normalizedStatus === 'APPROVED' && metaLastUpdatedIso) {
+          row.approved_at = metaLastUpdatedIso
         }
-        if (!row.last_submitted_at) {
-          row.last_submitted_at = new Date().toISOString()
+        if (!row.last_submitted_at && metaLastUpdatedIso) {
+          if (normalizedStatus === 'PENDING') {
+            row.last_submitted_at = metaLastUpdatedIso
+          }
         }
         const { error: insErr } = await supabase
           .from('message_templates')

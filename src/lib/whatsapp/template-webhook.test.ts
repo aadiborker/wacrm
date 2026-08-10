@@ -91,6 +91,7 @@ describe('handleTemplateWebhookChange — status update', () => {
           message_template_name: 'order_confirmation',
           message_template_language: 'en_US',
         },
+        triggeredAt: 1739321024,
       },
       stub,
     );
@@ -104,8 +105,25 @@ describe('handleTemplateWebhookChange — status update', () => {
       status: 'APPROVED',
       rejection_reason: null,
       submission_error: null,
-      approved_at: expect.any(String),
+      approved_at: '2025-02-12T00:43:44.000Z',
     });
+  });
+
+  it('stamps last_submitted_at from webhook entry.time on PENDING', async () => {
+    const { stub, calls } = makeSupabaseStub();
+    await handleTemplateWebhookChange(
+      {
+        field: 'message_template_status_update',
+        value: {
+          event: 'PENDING',
+          message_template_id: 12345,
+        },
+        triggeredAt: 1739321024,
+      },
+      stub,
+    );
+    expect(calls[0].update?.last_submitted_at).toBe('2025-02-12T00:43:44.000Z');
+    expect(calls[0].update?.approved_at).toBeUndefined();
   });
 
   it('persists the reason field on REJECTED', async () => {

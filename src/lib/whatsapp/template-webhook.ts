@@ -11,6 +11,12 @@
  * The route handler at /api/whatsapp/webhook receives every change and
  * delegates here when `change.field` starts with `message_template_`.
  *
+ * ─── Timestamp note ───────────────────────────────────────────────
+ * Meta does not expose a dedicated `approved_at` on templates. We use:
+ *   - webhook `entry.time` when status webhooks fire (best for live flow)
+ *   - template `last_updated_time` on sync (best-effort; reflects last edit)
+ * Submit-to-Meta via ReplyFlow still records exact `last_submitted_at`.
+ *
  * ─── Setup requirement (out-of-band) ──────────────────────────────
  * These fields are NOT subscribed to by default. In Meta App Dashboard
  * → WhatsApp → Configuration → Webhooks, you must explicitly toggle
@@ -28,6 +34,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { metaTimestampToIso } from '@/lib/template-format'
 import { normalizeStatus } from './template-status-normalize'
 
 const TEMPLATE_WEBHOOK_FIELDS = new Set([
@@ -65,6 +72,8 @@ interface TemplateComponentsUpdateValue {
 export interface TemplateWebhookChange {
   field: string
   value: unknown
+  /** Unix seconds from webhook `entry.time` — when Meta triggered the event. */
+  triggeredAt?: number | string
 }
 
 /**
@@ -85,6 +94,7 @@ export async function handleTemplateWebhookChange(
       await handleStatusUpdate(
         change.value as TemplateStatusUpdateValue,
         supabase,
+        change.triggeredAt,
       )
       return
     case 'message_template_quality_update':
@@ -104,6 +114,7 @@ export async function handleTemplateWebhookChange(
 async function handleStatusUpdate(
   value: TemplateStatusUpdateValue,
   supabase: SupabaseClient,
+  triggeredAt?: number | string,
 ): Promise<void> {
   const metaTemplateId =
     value.message_template_id !== undefined
@@ -119,6 +130,9 @@ async function handleStatusUpdate(
 
   const status = normalizeStatus(value.event)
 
+  const eventAt =
+    metaTimestampToIso(triggeredAt) ?? new Date().toISOString()
+
   // Persist the rejection reason on REJECTED — that's the only event
   // where Meta sends a human-readable explanation. Clear it on any
   // other status flip so the UI doesn't show a stale REJECTED banner
@@ -129,8 +143,11 @@ async function handleStatusUpdate(
       status === 'REJECTED' ? value.reason ?? 'Rejected by Meta' : null,
     submission_error: null,
   }
+  if (status === 'PENDING') {
+    update.last_submitted_at = eventAt
+  }
   if (status === 'APPROVED') {
-    update.approved_at = new Date().toISOString()
+    update.approved_at = eventAt
   }
 
   const { data, error } = await supabase

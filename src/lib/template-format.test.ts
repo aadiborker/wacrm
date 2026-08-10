@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { formatTemplateTime12h, resolveTemplateSentIso } from './template-format';
+import {
+  formatTemplateTime12h,
+  metaTimestampToIso,
+  resolveTemplateSentIso,
+} from './template-format';
 
 describe('formatTemplateTime12h', () => {
   it('formats in 12-hour clock with AM/PM', () => {
@@ -11,6 +15,22 @@ describe('formatTemplateTime12h', () => {
 
   it('returns empty string for invalid input', () => {
     expect(formatTemplateTime12h('not-a-date')).toBe('');
+  });
+});
+
+describe('metaTimestampToIso', () => {
+  it('converts Unix seconds', () => {
+    expect(metaTimestampToIso(1739321024)).toBe('2025-02-12T00:43:44.000Z');
+  });
+
+  it('converts ISO strings', () => {
+    expect(metaTimestampToIso('2026-08-10T08:40:00Z')).toBe(
+      '2026-08-10T08:40:00.000Z',
+    );
+  });
+
+  it('returns null for invalid input', () => {
+    expect(metaTimestampToIso('not-a-date')).toBeNull();
   });
 });
 
