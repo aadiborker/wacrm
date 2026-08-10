@@ -104,6 +104,7 @@ describe('handleTemplateWebhookChange — status update', () => {
       status: 'APPROVED',
       rejection_reason: null,
       submission_error: null,
+      approved_at: expect.any(String),
     });
   });
 

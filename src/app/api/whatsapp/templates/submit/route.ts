@@ -53,6 +53,8 @@ function buildUpsertRow(
     // webhook will set it again if Meta still rejects.
     rejection_reason: extras.submissionError ? null : null,
     last_submitted_at: new Date().toISOString(),
+    // Fresh submission — approval time is unknown until Meta/webhook/sync.
+    approved_at: extras.status === 'APPROVED' ? new Date().toISOString() : null,
   }
 }
 

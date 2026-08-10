@@ -232,7 +232,25 @@ export async function POST() {
           ? headerFormat.toLowerCase()
           : null
 
-      const row = {
+      const { data: existing, error: lookupErr } = await supabase
+        .from('message_templates')
+        .select('id, status, approved_at')
+        .eq('account_id', accountId)
+        .eq('name', t.name)
+        .eq('language', t.language)
+        .maybeSingle()
+
+      if (lookupErr) {
+        errors.push({
+          name: t.name,
+          language: t.language,
+          message: lookupErr.message,
+        })
+        continue
+      }
+
+      const normalizedStatus = normalizeStatus(t.status)
+      const row: Record<string, unknown> = {
         // Account tenancy + user audit, same split as the submit
         // route. account_id is NOT NULL on message_templates
         // post-017, so an INSERT without it errors.
@@ -248,27 +266,17 @@ export async function POST() {
         footer_text: footer?.text ?? null,
         buttons: parsedButtons.length ? parsedButtons : null,
         sample_values: sampleValues,
-        status: normalizeStatus(t.status),
+        status: normalizedStatus,
         meta_template_id: t.id,
         quality_score: normalizeQualityScore(t.quality_score),
         updated_at: new Date().toISOString(),
       }
 
-      const { data: existing, error: lookupErr } = await supabase
-        .from('message_templates')
-        .select('id')
-        .eq('account_id', accountId)
-        .eq('name', t.name)
-        .eq('language', t.language)
-        .maybeSingle()
-
-      if (lookupErr) {
-        errors.push({
-          name: t.name,
-          language: t.language,
-          message: lookupErr.message,
-        })
-        continue
+      if (
+        normalizedStatus === 'APPROVED' &&
+        (existing?.status !== 'APPROVED' || !existing?.approved_at)
+      ) {
+        row.approved_at = new Date().toISOString()
       }
 
       if (existing?.id) {
@@ -286,6 +294,12 @@ export async function POST() {
           updated++
         }
       } else {
+        if (
+          normalizedStatus === 'APPROVED' &&
+          !row.approved_at
+        ) {
+          row.approved_at = new Date().toISOString()
+        }
         const { error: insErr } = await supabase
           .from('message_templates')
           .insert(row)

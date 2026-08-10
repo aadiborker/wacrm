@@ -50,6 +50,7 @@ import type {
   TemplateSampleValues,
 } from '@/types';
 import { templateStatusConfig } from '@/lib/template-status';
+import { formatTemplateTime12h } from '@/lib/template-format';
 import {
   extractVariableIndices,
   TEMPLATE_LIMITS,
@@ -595,6 +596,31 @@ export function TemplateManager() {
                         <span>
                           {template.rejection_reason || template.submission_error}
                         </span>
+                      </div>
+                    )}
+                    {(template.last_submitted_at || template.approved_at) && (
+                      <div className="space-y-0.5 text-xs text-muted-foreground">
+                        {template.last_submitted_at && (
+                          <p>
+                            {t('templateSent', {
+                              time: formatTemplateTime12h(
+                                template.last_submitted_at,
+                              ),
+                            })}
+                          </p>
+                        )}
+                        {template.approved_at ? (
+                          <p>
+                            {t('templateApproved', {
+                              time: formatTemplateTime12h(
+                                template.approved_at,
+                              ),
+                            })}
+                          </p>
+                        ) : template.last_submitted_at &&
+                          statusKey === 'PENDING' ? (
+                          <p>{t('templateApprovedPending')}</p>
+                        ) : null}
                       </div>
                     )}
                   </div>

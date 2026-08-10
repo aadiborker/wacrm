@@ -343,6 +343,7 @@ export interface MessageTemplate {
   quality_score?: 'GREEN' | 'YELLOW' | 'RED';
   submission_error?: string;
   last_submitted_at?: string;
+  approved_at?: string;
   created_at: string;
 }
 

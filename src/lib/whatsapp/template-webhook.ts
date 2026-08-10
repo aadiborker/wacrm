@@ -129,6 +129,9 @@ async function handleStatusUpdate(
       status === 'REJECTED' ? value.reason ?? 'Rejected by Meta' : null,
     submission_error: null,
   }
+  if (status === 'APPROVED') {
+    update.approved_at = new Date().toISOString()
+  }
 
   const { data, error } = await supabase
     .from('message_templates')

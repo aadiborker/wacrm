@@ -202,6 +202,7 @@ export async function PATCH(
         submission_error: null,
         rejection_reason: null,
         last_submitted_at: new Date().toISOString(),
+        approved_at: null,
       })
       .eq('id', id)
       .select()
