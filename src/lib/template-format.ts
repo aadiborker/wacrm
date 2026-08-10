@@ -12,3 +12,16 @@ export function formatTemplateTime12h(iso: string): string {
     ` ${meridiem.toUpperCase()}`,
   );
 }
+
+/**
+ * When Meta submission time is missing (template synced from Meta only),
+ * fall back to when the row was first stored in ReplyFlow.
+ */
+export function resolveTemplateSentIso(
+  lastSubmittedAt?: string | null,
+  createdAt?: string | null,
+): string | null {
+  if (lastSubmittedAt) return lastSubmittedAt;
+  if (createdAt) return createdAt;
+  return null;
+}

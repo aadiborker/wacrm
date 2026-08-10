@@ -234,7 +234,7 @@ export async function POST() {
 
       const { data: existing, error: lookupErr } = await supabase
         .from('message_templates')
-        .select('id, status, approved_at')
+        .select('id, status, approved_at, last_submitted_at, created_at')
         .eq('account_id', accountId)
         .eq('name', t.name)
         .eq('language', t.language)
@@ -279,6 +279,13 @@ export async function POST() {
         row.approved_at = new Date().toISOString()
       }
 
+      // Templates pulled from Meta never went through our submit route —
+      // stamp last_submitted_at from first-seen time so analytics can show
+      // both sent + approved.
+      if (existing?.id && !existing.last_submitted_at && existing.created_at) {
+        row.last_submitted_at = existing.created_at as string
+      }
+
       if (existing?.id) {
         const { error: updErr } = await supabase
           .from('message_templates')
@@ -299,6 +306,9 @@ export async function POST() {
           !row.approved_at
         ) {
           row.approved_at = new Date().toISOString()
+        }
+        if (!row.last_submitted_at) {
+          row.last_submitted_at = new Date().toISOString()
         }
         const { error: insErr } = await supabase
           .from('message_templates')

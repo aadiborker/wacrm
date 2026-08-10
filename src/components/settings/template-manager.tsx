@@ -50,7 +50,7 @@ import type {
   TemplateSampleValues,
 } from '@/types';
 import { templateStatusConfig } from '@/lib/template-status';
-import { formatTemplateTime12h } from '@/lib/template-format';
+import { formatTemplateTime12h, resolveTemplateSentIso } from '@/lib/template-format';
 import {
   extractVariableIndices,
   TEMPLATE_LIMITS,
@@ -548,6 +548,10 @@ export function TemplateManager() {
           {templates.map((template) => {
             const statusKey = template.status || 'DRAFT';
             const status = templateStatusConfig[statusKey];
+            const sentIso = resolveTemplateSentIso(
+              template.last_submitted_at,
+              template.created_at,
+            );
             return (
               <Card key={template.id}>
                 <CardContent className="flex items-start justify-between pt-4">
@@ -598,14 +602,12 @@ export function TemplateManager() {
                         </span>
                       </div>
                     )}
-                    {(template.last_submitted_at || template.approved_at) && (
+                    {(sentIso || template.approved_at) && (
                       <div className="space-y-0.5 text-xs text-muted-foreground">
-                        {template.last_submitted_at && (
+                        {sentIso && (
                           <p>
                             {t('templateSent', {
-                              time: formatTemplateTime12h(
-                                template.last_submitted_at,
-                              ),
+                              time: formatTemplateTime12h(sentIso),
                             })}
                           </p>
                         )}
@@ -617,8 +619,7 @@ export function TemplateManager() {
                               ),
                             })}
                           </p>
-                        ) : template.last_submitted_at &&
-                          statusKey === 'PENDING' ? (
+                        ) : sentIso && statusKey === 'PENDING' ? (
                           <p>{t('templateApprovedPending')}</p>
                         ) : null}
                       </div>

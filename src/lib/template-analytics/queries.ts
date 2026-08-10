@@ -17,6 +17,7 @@ export interface TemplateAnalyticsRow {
   templateStatus: string | null;
   lastSubmittedAt: string | null;
   approvedAt: string | null;
+  createdAt: string | null;
   broadcast: ChannelMetrics & { campaigns: number };
   inbox: ChannelMetrics;
   automation: ChannelMetrics;
@@ -65,6 +66,7 @@ function mergeBroadcastRow(
       templateStatus: null,
       lastSubmittedAt: null,
       approvedAt: null,
+      createdAt: null,
       broadcast: { ...emptyBucket(), campaigns: 0 },
       inbox: emptyBucket(),
       automation: emptyBucket(),
@@ -94,7 +96,7 @@ export async function loadTemplateAnalytics(
     db
       .from('message_templates')
       .select(
-        'name, language, category, quality_score, status, last_submitted_at, approved_at',
+        'name, language, category, quality_score, status, last_submitted_at, approved_at, created_at',
       )
       .eq('account_id', accountId),
     db
@@ -121,6 +123,7 @@ export async function loadTemplateAnalytics(
         templateStatus: (tpl.status as string | null) ?? null,
         lastSubmittedAt: (tpl.last_submitted_at as string | null) ?? null,
         approvedAt: (tpl.approved_at as string | null) ?? null,
+        createdAt: (tpl.created_at as string | null) ?? null,
         broadcast: { ...emptyBucket(), campaigns: 0 },
         inbox: emptyBucket(),
         automation: emptyBucket(),
@@ -139,6 +142,8 @@ export async function loadTemplateAnalytics(
         null;
       entry.approvedAt =
         entry.approvedAt ?? (tpl.approved_at as string | null) ?? null;
+      entry.createdAt =
+        entry.createdAt ?? (tpl.created_at as string | null) ?? null;
     }
   }
 
@@ -161,6 +166,7 @@ export async function loadTemplateAnalytics(
         templateStatus: null,
         lastSubmittedAt: null,
         approvedAt: null,
+        createdAt: null,
         broadcast: { ...emptyBucket(), campaigns: 0 },
         inbox: emptyBucket(),
         automation: emptyBucket(),

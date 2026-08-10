@@ -17,7 +17,7 @@ import {
   type TemplateAnalyticsRow,
 } from '@/lib/template-analytics/queries';
 import { templateStatusConfig } from '@/lib/template-status';
-import { formatTemplateTime12h } from '@/lib/template-format';
+import { formatTemplateTime12h, resolveTemplateSentIso } from '@/lib/template-format';
 import type { MessageTemplateStatus } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -149,6 +149,10 @@ export default function TemplateAnalyticsPage() {
                     const read = totalRead(row);
                     const failed = totalFailed(row);
                     const statusKey = row.templateStatus;
+                    const sentIso = resolveTemplateSentIso(
+                      row.lastSubmittedAt,
+                      row.createdAt,
+                    );
                     const status =
                       statusKey && statusKey in templateStatusConfig
                         ? templateStatusConfig[
@@ -179,14 +183,12 @@ export default function TemplateAnalyticsPage() {
                                 —
                               </span>
                             )}
-                            {(row.lastSubmittedAt || row.approvedAt) && (
+                            {(sentIso || row.approvedAt) && (
                               <div className="space-y-0.5 text-xs text-muted-foreground">
-                                {row.lastSubmittedAt && (
+                                {sentIso && (
                                   <p>
                                     {tTemplate('templateSent', {
-                                      time: formatTemplateTime12h(
-                                        row.lastSubmittedAt,
-                                      ),
+                                      time: formatTemplateTime12h(sentIso),
                                     })}
                                   </p>
                                 )}
@@ -198,8 +200,7 @@ export default function TemplateAnalyticsPage() {
                                       ),
                                     })}
                                   </p>
-                                ) : row.lastSubmittedAt &&
-                                  statusKey === 'PENDING' ? (
+                                ) : sentIso && statusKey === 'PENDING' ? (
                                   <p>{tTemplate('templateApprovedPending')}</p>
                                 ) : null}
                               </div>
