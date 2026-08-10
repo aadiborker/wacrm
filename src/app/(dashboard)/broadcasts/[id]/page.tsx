@@ -32,6 +32,7 @@ import {
   Download,
   ChevronDown,
   Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -158,38 +159,53 @@ export default function BroadcastDetailPage() {
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+
+  async function fetchData() {
+    try {
+      const supabase = createClient();
+
+      const { data: bc, error: bcError } = await supabase
+        .from('broadcasts')
+        .select('*')
+        .eq('id', broadcastId)
+        .single();
+
+      if (bcError) throw bcError;
+      setBroadcast(bc);
+
+      const { data: recs, error: recsError } = await supabase
+        .from('broadcast_recipients')
+        .select('*, contact:contacts(*)')
+        .eq('broadcast_id', broadcastId)
+        .order('created_at', { ascending: false });
+
+      if (recsError) throw recsError;
+      setRecipients(recs ?? []);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('notFound'));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const supabase = createClient();
-
-        const { data: bc, error: bcError } = await supabase
-          .from('broadcasts')
-          .select('*')
-          .eq('id', broadcastId)
-          .single();
-
-        if (bcError) throw bcError;
-        setBroadcast(bc);
-
-        const { data: recs, error: recsError } = await supabase
-          .from('broadcast_recipients')
-          .select('*, contact:contacts(*)')
-          .eq('broadcast_id', broadcastId)
-          .order('created_at', { ascending: false });
-
-        if (recsError) throw recsError;
-        setRecipients(recs ?? []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t('notFound'));
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchData();
+    setLoading(true);
+    void fetchData();
+    // broadcastId is the only external trigger; fetchData is stable per id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [broadcastId]);
+
+  // Poll while sending (initial send or retry).
+  useEffect(() => {
+    if (!broadcast || broadcast.status !== 'sending') return;
+    const timer = setInterval(() => {
+      void fetchData();
+    }, 5000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [broadcast?.status, broadcastId]);
 
   const filteredRecipients = useMemo(
     () =>
@@ -244,6 +260,36 @@ export default function BroadcastDetailPage() {
     router.push('/broadcasts');
   }
 
+  async function handleRetryFailed() {
+    if (!broadcast || broadcast.failed_count === 0) return;
+    setRetrying(true);
+    try {
+      const res = await fetch(`/api/broadcasts/${broadcastId}/retry-failed`, {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Retry failed');
+      }
+      toast.success(
+        t('toastRetrySuccess', {
+          sent: data.sent ?? 0,
+          failed: data.failed ?? 0,
+        }),
+      );
+      setLoading(true);
+      await fetchData();
+    } catch (err) {
+      toast.error(
+        t('toastRetryFailed', {
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }),
+      );
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -294,15 +340,46 @@ export default function BroadcastDetailPage() {
                 {tStatus(status.label)}
               </span>
             </div>
-            <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
+            <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
               <span>{t('template', { name: broadcast.template_name })}</span>
               <span>-</span>
               <span>
                 {t('createdAt', { date: new Date(broadcast.created_at).toLocaleDateString() })}
               </span>
+              {broadcast.status === 'scheduled' && broadcast.scheduled_at && (
+                <>
+                  <span>-</span>
+                  <span>
+                    {t('scheduledAt', {
+                      date: new Date(broadcast.scheduled_at).toLocaleString(),
+                    })}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {broadcast.failed_count > 0 &&
+            broadcast.status !== 'sending' &&
+            broadcast.status !== 'scheduled' && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={retrying}
+                onClick={() => void handleRetryFailed()}
+                title={t('retryFailedHint')}
+                className="border-border text-muted-foreground"
+              >
+                {retrying ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                {retrying ? t('retrying') : t('retryFailed')}
+              </Button>
+            )}
 
         {/* Delete — inline-confirm pattern matches the pipeline-settings
             "Delete Pipeline" flow. Mid-send broadcasts can't be deleted
@@ -346,6 +423,7 @@ export default function BroadcastDetailPage() {
             {t('delete')}
           </Button>
         )}
+        </div>
       </div>
 
       {/* Stats — 6 cards: Total / Sent / Delivered / Read / Replied / Failed */}

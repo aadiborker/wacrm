@@ -25,7 +25,8 @@ export default function NewBroadcastPage() {
   const router = useRouter();
   const t = useTranslations('Broadcasts.new');
   const { accountId } = useAuth();
-  const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
+  const { createAndSendBroadcast, createScheduledBroadcast, isProcessing, progress } =
+    useBroadcastSending();
 
   const [currentStep, setCurrentStep] = useState(0);
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
@@ -45,6 +46,33 @@ export default function NewBroadcastPage() {
   >({});
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [name, setName] = useState('');
+
+  async function handleSchedule(scheduledAt: string) {
+    if (!template) return;
+
+    try {
+      const broadcastId = await createScheduledBroadcast({
+        name,
+        template,
+        audience: {
+          type: audience.type,
+          tagIds: audience.tagIds,
+          customField: audience.customField,
+          csvContacts: audience.csvContacts,
+          excludeTagIds: audience.excludeTagIds,
+        },
+        variables,
+        headerMediaUrl,
+        scheduledAt,
+      });
+      toast.success(t('toastScheduled'));
+      router.push(`/broadcasts/${broadcastId}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Schedule failed';
+      console.error('Schedule failed:', err);
+      toast.error(message);
+    }
+  }
 
   async function handleSend() {
     if (!template) return;
@@ -222,6 +250,7 @@ export default function NewBroadcastPage() {
               template={template}
               audience={audience}
               onSend={handleSend}
+              onSchedule={handleSchedule}
               onSaveDraft={handleSaveDraft}
               onBack={() => setCurrentStep(2)}
               isProcessing={isProcessing}

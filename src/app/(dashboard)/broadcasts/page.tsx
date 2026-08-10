@@ -95,6 +95,11 @@ export default function BroadcastsPage() {
     [broadcasts],
   );
 
+  const anyScheduled = useMemo(
+    () => broadcasts.some((b) => b.status === 'scheduled'),
+    [broadcasts],
+  );
+
   useEffect(() => {
     function startPolling() {
       if (pollTimer.current) return;
@@ -121,6 +126,8 @@ export default function BroadcastsPage() {
 
     if (anySending && document.visibilityState === 'visible') {
       startPolling();
+    } else if (anyScheduled && document.visibilityState === 'visible') {
+      startPolling();
     } else {
       stopPolling();
     }
@@ -129,7 +136,7 @@ export default function BroadcastsPage() {
       stopPolling();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [anySending]);
+  }, [anySending, anyScheduled]);
 
   if (loading) {
     return (
@@ -277,7 +284,9 @@ export default function BroadcastsPage() {
                       </span>
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground sm:table-cell">
-                      {new Date(broadcast.created_at).toLocaleDateString()}
+                      {broadcast.status === 'scheduled' && broadcast.scheduled_at
+                        ? new Date(broadcast.scheduled_at).toLocaleString()
+                        : new Date(broadcast.created_at).toLocaleDateString()}
                     </TableCell>
                   </TableRow>
                 );

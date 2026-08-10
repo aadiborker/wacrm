@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -14,7 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Send, Loader2, Users, Save } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Users, Save, CalendarClock } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 interface AudienceConfig {
@@ -29,11 +30,14 @@ interface Step4Props {
   template: MessageTemplate;
   audience: AudienceConfig;
   onSend: () => void;
+  onSchedule: (scheduledAt: string) => void;
   onSaveDraft?: () => void;
   onBack: () => void;
   isProcessing: boolean;
   progress: number;
 }
+
+type SendMode = 'now' | 'schedule';
 
 export function Step4ScheduleSend({
   name,
@@ -41,6 +45,7 @@ export function Step4ScheduleSend({
   template,
   audience,
   onSend,
+  onSchedule,
   onSaveDraft,
   onBack,
   isProcessing,
@@ -50,6 +55,8 @@ export function Step4ScheduleSend({
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
+  const [sendMode, setSendMode] = useState<SendMode>('now');
+  const [scheduledLocal, setScheduledLocal] = useState('');
 
   useEffect(() => {
     async function calculateReach() {
@@ -92,6 +99,21 @@ export function Step4ScheduleSend({
           ? t('scheduleSend.audienceCsv')
           : t('scheduleSend.audienceField');
 
+  const confirmAction = () => {
+    setShowConfirm(false);
+    if (sendMode === 'schedule') {
+      if (!scheduledLocal) return;
+      const at = new Date(scheduledLocal);
+      onSchedule(at.toISOString());
+    } else {
+      onSend();
+    }
+  };
+
+  const scheduleInvalid =
+    sendMode === 'schedule' &&
+    (!scheduledLocal || new Date(scheduledLocal).getTime() <= Date.now() + 60_000);
+
   return (
     <div className="space-y-6">
       <div>
@@ -101,9 +123,10 @@ export function Step4ScheduleSend({
         </p>
       </div>
 
-      {/* Broadcast Name */}
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-foreground">{t('scheduleSend.broadcastName')}</label>
+        <label className="mb-1.5 block text-sm font-medium text-foreground">
+          {t('scheduleSend.broadcastName')}
+        </label>
         <Input
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
@@ -112,7 +135,63 @@ export function Step4ScheduleSend({
         />
       </div>
 
-      {/* Summary Card */}
+      {/* Send timing */}
+      <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+        <p className="text-sm font-medium text-foreground">
+          {t('scheduleSend.whenToSend')}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant={sendMode === 'now' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setSendMode('now')}
+            disabled={isProcessing}
+            className={
+              sendMode === 'now'
+                ? 'bg-primary text-primary-foreground'
+                : 'border-border text-muted-foreground'
+            }
+          >
+            <Send className="h-3.5 w-3.5" />
+            {t('scheduleSend.sendNow')}
+          </Button>
+          <Button
+            type="button"
+            variant={sendMode === 'schedule' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setSendMode('schedule')}
+            disabled={isProcessing}
+            className={
+              sendMode === 'schedule'
+                ? 'bg-primary text-primary-foreground'
+                : 'border-border text-muted-foreground'
+            }
+          >
+            <CalendarClock className="h-3.5 w-3.5" />
+            {t('scheduleSend.scheduleForLater')}
+          </Button>
+        </div>
+        {sendMode === 'schedule' && (
+          <div className="space-y-1.5">
+            <Label htmlFor="scheduled-at" className="text-xs text-muted-foreground">
+              {t('scheduleSend.scheduleAtLabel')}
+            </Label>
+            <Input
+              id="scheduled-at"
+              type="datetime-local"
+              value={scheduledLocal}
+              onChange={(e) => setScheduledLocal(e.target.value)}
+              disabled={isProcessing}
+              className="border-border bg-muted text-foreground max-w-xs"
+            />
+            <p className="text-xs text-muted-foreground">
+              {t('scheduleSend.scheduleHint')}
+            </p>
+          </div>
+        )}
+      </div>
+
       <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">
         <p className="text-sm font-medium text-foreground">{t('scheduleSend.summary')}</p>
         <div className="grid grid-cols-2 gap-3 text-sm">
@@ -125,7 +204,7 @@ export function Step4ScheduleSend({
             <p className="text-foreground">{audienceLabel}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Estimated Reach</p>
+            <p className="text-xs text-muted-foreground">{t('scheduleSend.estimatedReach')}</p>
             <div className="flex items-center gap-1.5">
               {loadingReach ? (
                 <Loader2 className="h-3 w-3 animate-spin text-primary" />
@@ -138,19 +217,22 @@ export function Step4ScheduleSend({
             </div>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Language</p>
+            <p className="text-xs text-muted-foreground">{t('scheduleSend.language')}</p>
             <p className="text-foreground">{template.language ?? 'en_US'}</p>
           </div>
         </div>
       </div>
 
-      {/* Processing overlay */}
       {isProcessing && (
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              <p className="text-sm font-medium text-foreground">{t('scheduleSend.sending')}</p>
+              <p className="text-sm font-medium text-foreground">
+                {sendMode === 'schedule'
+                  ? t('scheduleSend.scheduling')
+                  : t('scheduleSend.sending')}
+              </p>
             </div>
             <span className="text-xs font-medium text-primary">{progress}%</span>
           </div>
@@ -188,49 +270,71 @@ export function Step4ScheduleSend({
           )}
 
           <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
-          <DialogTrigger
-            render={
-              <Button
-                disabled={!name.trim() || isProcessing}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              />
-            }
-          >
-            <Send className="h-4 w-4" />
-            {t('scheduleSend.sendNow')}
-          </DialogTrigger>
-          <DialogContent className="border-border bg-popover sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-popover-foreground">Confirm Broadcast</DialogTitle>
-              <DialogDescription className="text-muted-foreground">
-                You are about to send this broadcast to{' '}
-                <span className="font-medium text-popover-foreground">{estimatedReach.toLocaleString()}</span>{' '}
-                contacts using the{' '}
-                <span className="font-medium text-popover-foreground">{template.name}</span> template.
-                This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setShowConfirm(false)}
-                className="border-border text-muted-foreground"
-              >
-                {t('cancel')}
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowConfirm(false);
-                  onSend();
-                }}
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-              >
+            <DialogTrigger
+              render={
+                <Button
+                  disabled={
+                    !name.trim() || isProcessing || scheduleInvalid
+                  }
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                />
+              }
+            >
+              {sendMode === 'schedule' ? (
+                <CalendarClock className="h-4 w-4" />
+              ) : (
                 <Send className="h-4 w-4" />
-                {t('scheduleSend.sendNow')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              )}
+              {sendMode === 'schedule'
+                ? t('scheduleSend.scheduleBroadcast')
+                : t('scheduleSend.sendNow')}
+            </DialogTrigger>
+            <DialogContent className="border-border bg-popover sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-popover-foreground">
+                  {sendMode === 'schedule'
+                    ? t('scheduleSend.confirmScheduleTitle')
+                    : t('scheduleSend.confirmSendTitle')}
+                </DialogTitle>
+                <DialogDescription className="text-muted-foreground">
+                  {sendMode === 'schedule'
+                    ? t('scheduleSend.confirmScheduleDesc', {
+                        count: estimatedReach,
+                        template: template.name,
+                        time: scheduledLocal
+                          ? new Date(scheduledLocal).toLocaleString()
+                          : '',
+                      })
+                    : t('scheduleSend.confirmSendDesc', {
+                        count: estimatedReach,
+                        template: template.name,
+                      })}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowConfirm(false)}
+                  className="border-border text-muted-foreground"
+                >
+                  {t('cancel')}
+                </Button>
+                <Button
+                  onClick={confirmAction}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {sendMode === 'schedule' ? (
+                    <CalendarClock className="h-4 w-4" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                  {sendMode === 'schedule'
+                    ? t('scheduleSend.scheduleBroadcast')
+                    : t('scheduleSend.sendNow')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
     </div>
