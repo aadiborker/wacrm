@@ -11,7 +11,9 @@ PM2_NAME="${PM2_NAME:-wacrm}"
 cd "$APP_DIR"
 
 echo "==> Pull"
-git pull origin main
+git fetch origin main
+# Discard local lockfile/npm drift (common when npm install runs before pull).
+git reset --hard origin/main
 
 echo "==> Install"
 npm install
