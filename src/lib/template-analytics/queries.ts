@@ -15,6 +15,8 @@ export interface TemplateAnalyticsRow {
   category: string | null;
   qualityScore: string | null;
   templateStatus: string | null;
+  lastSubmittedAt: string | null;
+  approvedAt: string | null;
   broadcast: ChannelMetrics & { campaigns: number };
   inbox: ChannelMetrics;
   automation: ChannelMetrics;
@@ -61,6 +63,8 @@ function mergeBroadcastRow(
       category: null,
       qualityScore: null,
       templateStatus: null,
+      lastSubmittedAt: null,
+      approvedAt: null,
       broadcast: { ...emptyBucket(), campaigns: 0 },
       inbox: emptyBucket(),
       automation: emptyBucket(),
@@ -89,7 +93,9 @@ export async function loadTemplateAnalytics(
   const [templatesRes, broadcastsRes, messagesRes] = await Promise.all([
     db
       .from('message_templates')
-      .select('name, language, category, quality_score, status')
+      .select(
+        'name, language, category, quality_score, status, last_submitted_at, approved_at',
+      )
       .eq('account_id', accountId),
     db
       .from('broadcasts')
@@ -113,6 +119,8 @@ export async function loadTemplateAnalytics(
         category: (tpl.category as string | null) ?? null,
         qualityScore: (tpl.quality_score as string | null) ?? null,
         templateStatus: (tpl.status as string | null) ?? null,
+        lastSubmittedAt: (tpl.last_submitted_at as string | null) ?? null,
+        approvedAt: (tpl.approved_at as string | null) ?? null,
         broadcast: { ...emptyBucket(), campaigns: 0 },
         inbox: emptyBucket(),
         automation: emptyBucket(),
@@ -125,6 +133,12 @@ export async function loadTemplateAnalytics(
         entry.qualityScore ?? (tpl.quality_score as string | null);
       entry.templateStatus =
         entry.templateStatus ?? (tpl.status as string | null);
+      entry.lastSubmittedAt =
+        entry.lastSubmittedAt ??
+        (tpl.last_submitted_at as string | null) ??
+        null;
+      entry.approvedAt =
+        entry.approvedAt ?? (tpl.approved_at as string | null) ?? null;
     }
   }
 
@@ -145,6 +159,8 @@ export async function loadTemplateAnalytics(
         category: null,
         qualityScore: null,
         templateStatus: null,
+        lastSubmittedAt: null,
+        approvedAt: null,
         broadcast: { ...emptyBucket(), campaigns: 0 },
         inbox: emptyBucket(),
         automation: emptyBucket(),
@@ -153,7 +169,7 @@ export async function loadTemplateAnalytics(
     }
     const sender = msg.sender_type as string;
     const bucket =
-      sender === 'bot' ? entry.automation : entry.inbox;
+      sender === 'bot' ? entry!.automation : entry!.inbox;
     bumpMessageStatus(bucket, (msg.status as string) ?? 'sent');
   }
 

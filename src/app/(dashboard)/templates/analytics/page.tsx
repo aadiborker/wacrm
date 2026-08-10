@@ -17,6 +17,7 @@ import {
   type TemplateAnalyticsRow,
 } from '@/lib/template-analytics/queries';
 import { templateStatusConfig } from '@/lib/template-status';
+import { formatTemplateTime12h } from '@/lib/template-format';
 import type { MessageTemplateStatus } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -45,6 +46,7 @@ function RateBar({ value }: { value: number }) {
 
 export default function TemplateAnalyticsPage() {
   const t = useTranslations('Templates.analytics');
+  const tTemplate = useTranslations('Settings.templates');
   const { accountId } = useAuth();
   const [rows, setRows] = useState<TemplateAnalyticsRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -167,13 +169,42 @@ export default function TemplateAnalyticsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {status ? (
-                            <Badge className={`text-xs border ${status.classes}`}>
-                              {status.label}
-                            </Badge>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
+                          <div className="space-y-1">
+                            {status ? (
+                              <Badge className={`text-xs border ${status.classes}`}>
+                                {status.label}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                —
+                              </span>
+                            )}
+                            {(row.lastSubmittedAt || row.approvedAt) && (
+                              <div className="space-y-0.5 text-xs text-muted-foreground">
+                                {row.lastSubmittedAt && (
+                                  <p>
+                                    {tTemplate('templateSent', {
+                                      time: formatTemplateTime12h(
+                                        row.lastSubmittedAt,
+                                      ),
+                                    })}
+                                  </p>
+                                )}
+                                {row.approvedAt ? (
+                                  <p>
+                                    {tTemplate('templateApproved', {
+                                      time: formatTemplateTime12h(
+                                        row.approvedAt,
+                                      ),
+                                    })}
+                                  </p>
+                                ) : row.lastSubmittedAt &&
+                                  statusKey === 'PENDING' ? (
+                                  <p>{tTemplate('templateApprovedPending')}</p>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-foreground">
                           {sent.toLocaleString()}
