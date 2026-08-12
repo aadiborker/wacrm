@@ -9,6 +9,11 @@ import {
   normalizeKey,
 } from '@/lib/contacts/dedupe';
 import {
+  analyzeParsedContactRows,
+  type ImportFileAnalysis,
+  type ImportResultBreakdown,
+} from '@/lib/contacts/import-analysis';
+import {
   parseContactCsv,
   type ParsedContactRow,
 } from '@/lib/contacts/parse-contact-csv';
@@ -115,6 +120,33 @@ function ImportPreviewTags({
   );
 }
 
+function StatRow({
+  label,
+  value,
+  tone = 'default',
+}: {
+  label: string;
+  value: number | string;
+  tone?: 'default' | 'warn' | 'ok' | 'danger';
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span
+        className={cn(
+          'font-medium tabular-nums',
+          tone === 'warn' && 'text-amber-400',
+          tone === 'ok' && 'text-primary',
+          tone === 'danger' && 'text-red-400',
+          tone === 'default' && 'text-popover-foreground',
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 interface ImportModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -133,22 +165,21 @@ export function ImportModal({
 
   const [file, setFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ParsedContactRow[]>([]);
+  const [blankPhoneCount, setBlankPhoneCount] = useState(0);
+  const [blankPhoneSamples, setBlankPhoneSamples] = useState<string[]>([]);
   const [hasTagsColumn, setHasTagsColumn] = useState(false);
   const [hasCompanyColumn, setHasCompanyColumn] = useState(false);
   const [tagColorByKey, setTagColorByKey] = useState<Map<string, string>>(
     new Map()
   );
   const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState<{
-    imported: number;
-    skipped: number;
-    failed: number;
-    tagsAssigned: number;
-  } | null>(null);
+  const [result, setResult] = useState<ImportResultBreakdown | null>(null);
 
   function reset() {
     setFile(null);
     setParsedRows([]);
+    setBlankPhoneCount(0);
+    setBlankPhoneSamples([]);
     setHasTagsColumn(false);
     setHasCompanyColumn(false);
     setTagColorByKey(new Map());
@@ -173,11 +204,15 @@ export function ImportModal({
       rows,
       hasTagsColumn: csvHasTags,
       hasCompanyColumn: csvHasCompany,
+      blankPhoneCount: csvBlankPhone,
+      blankPhoneSamples: csvBlankSamples,
     } = parseContactCsv(text);
 
-    if (rows.length === 0) {
+    if (rows.length === 0 && csvBlankPhone === 0) {
       toast.error(t('toastNoValidRows'));
       setParsedRows([]);
+      setBlankPhoneCount(0);
+      setBlankPhoneSamples([]);
       setHasTagsColumn(false);
       setHasCompanyColumn(false);
       setTagColorByKey(new Map());
@@ -185,6 +220,8 @@ export function ImportModal({
     }
 
     setParsedRows(rows);
+    setBlankPhoneCount(csvBlankPhone);
+    setBlankPhoneSamples(csvBlankSamples);
     setHasTagsColumn(csvHasTags);
     setHasCompanyColumn(csvHasCompany);
 
@@ -218,16 +255,19 @@ export function ImportModal({
       if (!accountId)
         throw new Error('Your profile is not linked to an account.');
 
+      const analysis = analyzeParsedContactRows(parsedRows);
+
       let imported = 0;
-      let skipped = 0;
+      let skippedAlreadyExists = 0;
       let failed = 0;
+      const failedSamples: ImportResultBreakdown['failedSamples'] = [];
 
-      // 1) De-dupe within the file by normalized phone (keep first).
-      const { unique, duplicates: inFileDupes } = dedupeByPhone(parsedRows);
-      skipped += inFileDupes;
+      const {
+        unique,
+        duplicates: skippedInFileDuplicates,
+        empty: skippedEmptyPhone,
+      } = dedupeByPhone(parsedRows);
 
-      // 2) Skip numbers already in this account. One read of the
-      //    generated `phone_normalized` column (migration 022) → Set.
       const { data: existingRows } = await supabase
         .from('contacts')
         .select('phone_normalized')
@@ -242,31 +282,26 @@ export function ImportModal({
 
       const toInsert = unique.filter((row) => {
         if (existing.has(normalizeKey(row.phone))) {
-          skipped++;
+          skippedAlreadyExists++;
           return false;
         }
         return true;
       });
 
-      // 3) Resolve tag names → ids (admin+ may auto-create missing tags).
-      //    Skip the round-trip when the import carries no tag names.
       const allTagNames = toInsert.flatMap((row) => row.tagNames);
       let tagIdByKey = new Map<string, string>();
-      let skippedNames: string[] = [];
+      let skippedTagNames: string[] = [];
       if (allTagNames.length > 0) {
-        ({ tagIdByKey, skippedNames } = await resolveImportTagIds(supabase, {
-          accountId,
-          userId: user.id,
-          tagNames: allTagNames,
-          canCreateTags: canEditSettings,
-        }));
+        ({ tagIdByKey, skippedNames: skippedTagNames } =
+          await resolveImportTagIds(supabase, {
+            accountId,
+            userId: user.id,
+            tagNames: allTagNames,
+            canCreateTags: canEditSettings,
+          }));
       }
 
       const tagAssignments: ContactTagAssignment[] = [];
-
-      // 4) Batch insert the genuinely-new rows in chunks of 50. The DB
-      //    unique index is the backstop: a 23505 (race, or a format
-      //    that normalizes equal) counts as skipped, not failed.
       const chunkSize = 50;
 
       for (let i = 0; i < toInsert.length; i += chunkSize) {
@@ -287,8 +322,6 @@ export function ImportModal({
           .select('id');
 
         if (error) {
-          // Retry individually so one bad/duplicate row doesn't sink
-          // the whole chunk.
           for (let j = 0; j < rows.length; j++) {
             const row = rows[j];
             const source = chunk[j];
@@ -307,17 +340,29 @@ export function ImportModal({
                 });
               }
             } else if (isUniqueViolation(singleErr)) {
-              skipped++;
+              skippedAlreadyExists++;
             } else {
               failed++;
+              if (failedSamples.length < 5) {
+                const reason =
+                  singleErr &&
+                  typeof singleErr === 'object' &&
+                  'message' in singleErr &&
+                  typeof (singleErr as { message?: string }).message ===
+                    'string'
+                    ? (singleErr as { message: string }).message
+                    : 'Save failed';
+                failedSamples.push({
+                  phone: source.phone,
+                  name: source.name,
+                  reason,
+                });
+              }
             }
           }
         } else {
           const inserted = data ?? [];
           imported += inserted.length;
-          // inserted[j] ↔ chunk[j] only holds because a single INSERT
-          // preserves RETURNING order. If this path is ever split into
-          // parallel inserts, zip by phone or returned id instead.
           for (let j = 0; j < inserted.length; j++) {
             const source = chunk[j];
             if (!source || source.tagNames.length === 0) continue;
@@ -329,8 +374,6 @@ export function ImportModal({
         }
       }
 
-      // 5) Wire tags onto the contacts we just created. Failure here must
-      //    not mask a successful contact import.
       let tagsAssigned = 0;
       try {
         tagsAssigned = await assignImportedContactTags(
@@ -342,7 +385,25 @@ export function ImportModal({
         toast.warning(t('toastTagsWarning'));
       }
 
-      setResult({ imported, skipped, failed, tagsAssigned });
+      const breakdown: ImportResultBreakdown = {
+        totalRows: analysis.totalRows,
+        namesCount: analysis.namesCount,
+        uniquePhones: analysis.uniquePhones,
+        imported,
+        tagsAssigned,
+        skippedInFileDuplicates,
+        skippedAlreadyExists,
+        skippedEmptyPhone,
+        skippedBlankPhoneInCsv: blankPhoneCount,
+        failed,
+        failedSamples,
+        duplicateSamples: analysis.duplicateSamples,
+        shortPhoneSamples: analysis.shortPhoneSamples,
+        skippedTagNames,
+      };
+
+      setResult(breakdown);
+
       if (imported > 0) {
         toast.success(t('toastImported', { count: imported }));
         onImported();
@@ -350,14 +411,22 @@ export function ImportModal({
       if (tagsAssigned > 0) {
         toast.success(t('toastTagsAssigned', { count: tagsAssigned }));
       }
-      if (skippedNames.length > 0) {
-        const sample = skippedNames.slice(0, 3).join(', ');
+      if (skippedTagNames.length > 0) {
+        const sample = skippedTagNames.slice(0, 3).join(', ');
         const more =
-          skippedNames.length > 3 ? ` (+${skippedNames.length - 3} more)` : '';
+          skippedTagNames.length > 3
+            ? ` (+${skippedTagNames.length - 3} more)`
+            : '';
         toast.info(t('toastTagsSkipped', { sample, more }));
       }
-      if (skipped > 0) {
-        toast.info(t('toastSkipped', { count: skipped }));
+
+      const skippedTotal =
+        skippedInFileDuplicates +
+        skippedAlreadyExists +
+        skippedEmptyPhone +
+        blankPhoneCount;
+      if (skippedTotal > 0) {
+        toast.info(t('toastSkipped', { count: skippedTotal }));
       }
       if (failed > 0) {
         toast.error(t('toastFailed', { count: failed }));
@@ -371,14 +440,29 @@ export function ImportModal({
   }
 
   const preview = parsedRows.slice(0, PREVIEW_LIMIT);
-  // Tags: OR — show when the CSV declares a column or preview rows carry
-  // values, so an all-empty tags column still renders for validation.
   const previewHasTags =
     hasTagsColumn || preview.some((row) => row.tagNames.length > 0);
-  // Company: AND — hide unless the CSV declares it and preview has data,
-  // avoiding an all-dash column that wastes horizontal space.
   const previewHasCompany =
     hasCompanyColumn && preview.some((row) => row.company?.trim());
+
+  const fileAnalysis: ImportFileAnalysis | null = useMemo(() => {
+    if (parsedRows.length === 0 && blankPhoneCount === 0) return null;
+    if (parsedRows.length === 0) {
+      return {
+        totalRows: 0,
+        namesCount: 0,
+        uniquePhones: 0,
+        duplicateInFile: 0,
+        emptyNormalizedPhone: 0,
+        shortPhone: 0,
+        shortPhoneSamples: [],
+        duplicateSamples: [],
+      };
+    }
+    return analyzeParsedContactRows(parsedRows);
+  }, [parsedRows, blankPhoneCount]);
+
+  const willImport = fileAnalysis != null ? fileAnalysis.uniquePhones : 0;
 
   const tagStats = useMemo(() => {
     const names = new Set<string>();
@@ -399,15 +483,21 @@ export function ImportModal({
             <DialogTitle className="text-lg text-popover-foreground">
               {t('title')}
             </DialogTitle>
-            <DialogDescription className="leading-relaxed text-muted-foreground"
+            <DialogDescription
+              className="leading-relaxed text-muted-foreground"
               dangerouslySetInnerHTML={{
                 __html: t.markup('desc', {
-                  phoneCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  nameCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  emailCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  companyCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  tagsCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                })
+                  phoneCode: (chunks) =>
+                    `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
+                  nameCode: (chunks) =>
+                    `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
+                  emailCode: (chunks) =>
+                    `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
+                  companyCode: (chunks) =>
+                    `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
+                  tagsCode: (chunks) =>
+                    `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
+                }),
               }}
             />
           </DialogHeader>
@@ -466,7 +556,98 @@ export function ImportModal({
           />
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+          {fileAnalysis && !result && (
+            <div className="space-y-3 rounded-xl border border-border bg-background/50 p-4">
+              <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+                {t('summaryTitle')}
+              </p>
+              <div className="space-y-2">
+                <StatRow
+                  label={t('summaryTotalRows')}
+                  value={fileAnalysis.totalRows + blankPhoneCount}
+                />
+                <StatRow
+                  label={t('summaryNames')}
+                  value={fileAnalysis.namesCount}
+                />
+                <StatRow
+                  label={t('summaryPhones')}
+                  value={fileAnalysis.uniquePhones}
+                />
+                <StatRow
+                  label={t('summaryDuplicates')}
+                  value={fileAnalysis.duplicateInFile}
+                  tone={fileAnalysis.duplicateInFile > 0 ? 'warn' : 'default'}
+                />
+                {blankPhoneCount > 0 && (
+                  <StatRow
+                    label={t('summaryBlankPhone')}
+                    value={blankPhoneCount}
+                    tone="warn"
+                  />
+                )}
+                {fileAnalysis.shortPhone > 0 && (
+                  <StatRow
+                    label={t('summaryShortPhone')}
+                    value={fileAnalysis.shortPhone}
+                    tone="warn"
+                  />
+                )}
+                <StatRow
+                  label={t('summaryWillImport')}
+                  value={willImport}
+                  tone="ok"
+                />
+              </div>
+
+              {fileAnalysis.duplicateInFile > 0 && (
+                <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
+                  <p>{t('summaryHintDuplicates')}</p>
+                  {fileAnalysis.duplicateSamples.length > 0 && (
+                    <ul className="mt-1.5 space-y-0.5 font-mono text-[11px] text-amber-100/80">
+                      {fileAnalysis.duplicateSamples.map((s) => (
+                        <li key={s.phone}>
+                          {s.phone} ×{s.count}
+                          {s.names.length > 0
+                            ? ` — ${s.names.slice(0, 2).join(', ')}`
+                            : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {blankPhoneCount > 0 && (
+                <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
+                  <p>{t('summaryHintBlankPhone')}</p>
+                  {blankPhoneSamples.length > 0 && (
+                    <p className="mt-1 font-mono text-[11px] text-amber-100/80">
+                      {t('resultSampleLabel')}: {blankPhoneSamples.join(', ')}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {fileAnalysis.shortPhone > 0 && (
+                <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
+                  <p>{t('summaryHintShortPhone')}</p>
+                  {fileAnalysis.shortPhoneSamples.length > 0 && (
+                    <ul className="mt-1.5 space-y-0.5 font-mono text-[11px] text-amber-100/80">
+                      {fileAnalysis.shortPhoneSamples.map((s) => (
+                        <li key={s.phone}>
+                          {s.phone}
+                          {s.name ? ` — ${s.name}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {preview.length > 0 && !result && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -477,7 +658,10 @@ export function ImportModal({
                   {tagStats.rowsWithTags > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-muted/90 px-2 py-0.5 text-[11px] text-muted-foreground">
                       <Tag className="text-primary/80 size-3" />
-                      {t('previewTags', { tags: tagStats.unique, contacts: tagStats.rowsWithTags })}
+                      {t('previewTags', {
+                        tags: tagStats.unique,
+                        contacts: tagStats.rowsWithTags,
+                      })}
                     </span>
                   )}
                 </div>
@@ -566,9 +750,26 @@ export function ImportModal({
           )}
 
           {result && (
-            <div className="rounded-xl border border-border bg-background/50 p-4">
-              <p className="text-sm font-medium text-popover-foreground">{t('importComplete')}</p>
-              <div className="mt-3 flex flex-wrap gap-3">
+            <div className="space-y-3 rounded-xl border border-border bg-background/50 p-4">
+              <p className="text-sm font-medium text-popover-foreground">
+                {t('importComplete')}
+              </p>
+              <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+                {t('resultBreakdownTitle')}
+              </p>
+              <div className="space-y-2">
+                <StatRow
+                  label={t('summaryTotalRows')}
+                  value={result.totalRows + result.skippedBlankPhoneInCsv}
+                />
+                <StatRow label={t('summaryNames')} value={result.namesCount} />
+                <StatRow
+                  label={t('summaryPhones')}
+                  value={result.uniquePhones}
+                />
+              </div>
+
+              <div className="mt-1 flex flex-col gap-2 border-t border-border/70 pt-3">
                 {result.imported > 0 && (
                   <div className="text-primary flex items-center gap-1.5 text-sm">
                     <CheckCircle className="size-4 shrink-0" />
@@ -581,16 +782,81 @@ export function ImportModal({
                     {t('resultTags', { count: result.tagsAssigned })}
                   </div>
                 )}
-                {result.skipped > 0 && (
-                  <div className="flex items-center gap-1.5 text-sm text-amber-400">
-                    <AlertTriangle className="size-4 shrink-0" />
-                    {t('resultSkipped', { count: result.skipped })}
+                {result.skippedInFileDuplicates > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-sm text-amber-400">
+                      <AlertTriangle className="size-4 shrink-0" />
+                      {t('resultSkippedInFile', {
+                        count: result.skippedInFileDuplicates,
+                      })}
+                    </div>
+                    <p className="pl-5 text-xs text-muted-foreground">
+                      {t('summaryHintDuplicates')}
+                    </p>
+                    {result.duplicateSamples.length > 0 && (
+                      <ul className="pl-5 font-mono text-[11px] text-muted-foreground">
+                        {result.duplicateSamples.map((s) => (
+                          <li key={s.phone}>
+                            {s.phone} ×{s.count}
+                            {s.names.length > 0
+                              ? ` — ${s.names.slice(0, 2).join(', ')}`
+                              : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+                {result.skippedAlreadyExists > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-sm text-amber-400">
+                      <AlertTriangle className="size-4 shrink-0" />
+                      {t('resultSkippedExisting', {
+                        count: result.skippedAlreadyExists,
+                      })}
+                    </div>
+                    <p className="pl-5 text-xs text-muted-foreground">
+                      {t('summaryHintAlreadyExists')}
+                    </p>
+                  </div>
+                )}
+                {(result.skippedBlankPhoneInCsv > 0 ||
+                  result.skippedEmptyPhone > 0) && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-sm text-amber-400">
+                      <AlertTriangle className="size-4 shrink-0" />
+                      {result.skippedBlankPhoneInCsv > 0
+                        ? t('resultSkippedBlank', {
+                            count: result.skippedBlankPhoneInCsv,
+                          })
+                        : t('resultSkippedEmpty', {
+                            count: result.skippedEmptyPhone,
+                          })}
+                    </div>
+                    <p className="pl-5 text-xs text-muted-foreground">
+                      {t('summaryHintBlankPhone')}
+                    </p>
                   </div>
                 )}
                 {result.failed > 0 && (
-                  <div className="flex items-center gap-1.5 text-sm text-red-400">
-                    <XCircle className="size-4 shrink-0" />
-                    {t('resultFailed', { count: result.failed })}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-sm text-red-400">
+                      <XCircle className="size-4 shrink-0" />
+                      {t('resultFailedDetail', { count: result.failed })}
+                    </div>
+                    <p className="pl-5 text-xs text-muted-foreground">
+                      {t('summaryHintFailed')}
+                    </p>
+                    {result.failedSamples.length > 0 && (
+                      <ul className="pl-5 font-mono text-[11px] text-red-300/80">
+                        {result.failedSamples.map((s) => (
+                          <li key={`${s.phone}-${s.reason}`}>
+                            {s.phone}
+                            {s.name ? ` (${s.name})` : ''}: {s.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 )}
               </div>
@@ -615,7 +881,9 @@ export function ImportModal({
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {importing && <Loader2 className="size-4 animate-spin" />}
-              {parsedRows.length > 0 ? t('importBtn', { count: parsedRows.length }) : t('importBtn', { count: 0 })}
+              {parsedRows.length > 0
+                ? t('importBtn', { count: willImport })
+                : t('importBtn', { count: 0 })}
             </Button>
           )}
         </DialogFooter>

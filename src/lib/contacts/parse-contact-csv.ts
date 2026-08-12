@@ -37,12 +37,27 @@ export interface ParseContactCsvResult {
   hasTagsColumn: boolean;
   /** True when the CSV header includes a `company` column. */
   hasCompanyColumn: boolean;
+  /** Non-empty data lines after the header (including blank-phone rows). */
+  dataLineCount: number;
+  /** Rows skipped because the phone cell was empty. */
+  blankPhoneCount: number;
+  /** Sample names (or line numbers) for blank-phone rows. */
+  blankPhoneSamples: string[];
 }
+
+const EMPTY_PARSE: ParseContactCsvResult = {
+  rows: [],
+  hasTagsColumn: false,
+  hasCompanyColumn: false,
+  dataLineCount: 0,
+  blankPhoneCount: 0,
+  blankPhoneSamples: [],
+};
 
 export function parseContactCsv(text: string): ParseContactCsvResult {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) {
-    return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
+    return { ...EMPTY_PARSE };
   }
 
   const headers = lines[0]
@@ -51,7 +66,7 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
 
   const phoneIdx = headers.indexOf('phone');
   if (phoneIdx === -1) {
-    return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
+    return { ...EMPTY_PARSE };
   }
 
   const nameIdx = headers.indexOf('name');
@@ -60,14 +75,28 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
   const tagsIdx = headers.indexOf('tags');
 
   const rows: ParsedContactRow[] = [];
+  let dataLineCount = 0;
+  let blankPhoneCount = 0;
+  const blankPhoneSamples: string[] = [];
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
 
+    dataLineCount++;
     const values = parseCsvLine(line);
     const phone = values[phoneIdx]?.replace(/["']/g, '').trim();
-    if (!phone) continue;
+    if (!phone) {
+      blankPhoneCount++;
+      if (blankPhoneSamples.length < 5) {
+        const name =
+          nameIdx >= 0
+            ? values[nameIdx]?.replace(/["']/g, '').trim()
+            : undefined;
+        blankPhoneSamples.push(name || `row ${i + 1}`);
+      }
+      continue;
+    }
 
     rows.push({
       phone,
@@ -92,6 +121,9 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
     rows,
     hasTagsColumn: tagsIdx >= 0,
     hasCompanyColumn: companyIdx >= 0,
+    dataLineCount,
+    blankPhoneCount,
+    blankPhoneSamples,
   };
 }
 

@@ -57,12 +57,13 @@ describe("dedupeByPhone", () => {
   });
 
   it("drops rows with no digits", () => {
-    const { unique, duplicates } = dedupeByPhone([
+    const { unique, duplicates, empty } = dedupeByPhone([
       { phone: "   " },
       { phone: "+1 555-3333" },
     ]);
     expect(unique).toHaveLength(1);
-    expect(duplicates).toBe(1);
+    expect(duplicates).toBe(0);
+    expect(empty).toBe(1);
   });
 });
 

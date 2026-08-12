@@ -33,6 +33,9 @@ describe('parseContactCsv', () => {
     expect(parseContactCsv(csv)).toEqual({
       hasTagsColumn: true,
       hasCompanyColumn: false,
+      dataLineCount: 2,
+      blankPhoneCount: 0,
+      blankPhoneSamples: [],
       rows: [
         {
           phone: '+15551234567',
@@ -59,6 +62,9 @@ describe('parseContactCsv', () => {
     expect(parseContactCsv(csv)).toEqual({
       hasTagsColumn: false,
       hasCompanyColumn: false,
+      dataLineCount: 1,
+      blankPhoneCount: 0,
+      blankPhoneSamples: [],
       rows: [
         {
           phone: '+15551234567',
@@ -69,5 +75,18 @@ describe('parseContactCsv', () => {
         },
       ],
     });
+  });
+
+  it('counts blank phone rows separately', () => {
+    const csv = `name,phone
+Alice,
+Bob,15551234567
+,`;
+
+    const result = parseContactCsv(csv);
+    expect(result.rows).toHaveLength(1);
+    expect(result.blankPhoneCount).toBe(2);
+    expect(result.dataLineCount).toBe(3);
+    expect(result.blankPhoneSamples).toContain('Alice');
   });
 });
