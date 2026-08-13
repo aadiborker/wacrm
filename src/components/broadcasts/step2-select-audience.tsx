@@ -15,6 +15,12 @@ import {
   X,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  BROADCAST_RECIPIENT_LIMIT_MAX,
+  cappedAudienceCount,
+} from '@/lib/broadcasts/audience-limit';
 
 type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
 type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -31,6 +37,7 @@ interface AudienceConfig {
   customField?: CustomFieldFilter;
   csvContacts?: { phone: string; name?: string }[];
   excludeTagIds?: string[];
+  recipientLimit?: number;
 }
 
 interface Step2Props {
@@ -196,7 +203,9 @@ export function Step2SelectAudience({
           .from('contacts')
           .select('*', { count: 'exact', head: true });
         const total = count ?? 0;
-        setEstimatedCount(excludeSet ? Math.max(0, total - excludeSet.size) : total);
+        setEstimatedCount(
+          excludeSet ? Math.max(0, total - excludeSet.size) : total,
+        );
       }
     } finally {
       setLoadingCount(false);
@@ -207,6 +216,7 @@ export function Step2SelectAudience({
     audience.customField,
     audience.csvContacts,
     audience.excludeTagIds,
+    audience.recipientLimit,
   ]);
 
   useEffect(() => {
@@ -237,6 +247,24 @@ export function Step2SelectAudience({
     };
     onUpdate({ ...audience, customField: { ...prev, ...patch } });
   }
+
+  function setRecipientLimit(raw: string) {
+    if (!raw.trim()) {
+      onUpdate({ ...audience, recipientLimit: undefined });
+      return;
+    }
+    const parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    onUpdate({
+      ...audience,
+      recipientLimit: Math.min(parsed, BROADCAST_RECIPIENT_LIMIT_MAX),
+    });
+  }
+
+  const displayCount =
+    estimatedCount !== null
+      ? cappedAudienceCount(estimatedCount, audience.recipientLimit)
+      : null;
 
   const isValid =
     audience.type === 'all' ||
@@ -427,25 +455,91 @@ export function Step2SelectAudience({
         )}
       </div>
 
+      {/* Recipient cap — applies after audience + exclude filters */}
+      <div className="rounded-xl border border-border bg-card/50 p-4">
+        <Label className="text-sm font-medium text-foreground">
+          {t('selectAudience.recipientLimit')}
+        </Label>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t('selectAudience.recipientLimitDesc')}
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Input
+            type="number"
+            min={1}
+            max={BROADCAST_RECIPIENT_LIMIT_MAX}
+            placeholder={t('selectAudience.recipientLimitPlaceholder')}
+            value={audience.recipientLimit ?? ''}
+            onChange={(e) => setRecipientLimit(e.target.value)}
+            className="h-9 w-32 border-border bg-muted"
+          />
+          {[100, 500].map((preset) => (
+            <Button
+              key={preset}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-border text-muted-foreground"
+              onClick={() =>
+                onUpdate({ ...audience, recipientLimit: preset })
+              }
+            >
+              {t('selectAudience.recipientLimitPreset', { count: preset })}
+            </Button>
+          ))}
+          {audience.recipientLimit != null && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={() =>
+                onUpdate({ ...audience, recipientLimit: undefined })
+              }
+            >
+              {t('selectAudience.recipientLimitClear')}
+            </Button>
+          )}
+        </div>
+      </div>
+
       {/* Audience Summary */}
       <div className="rounded-xl border border-border bg-card/50 p-4">
-        <p className="mb-2 text-sm font-medium text-foreground">Audience Summary</p>
+        <p className="mb-2 text-sm font-medium text-foreground">
+          {t('selectAudience.summaryTitle')}
+        </p>
         {loadingCount ? (
           <div className="flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-xs text-muted-foreground">Calculating…</span>
-          </div>
-        ) : estimatedCount !== null ? (
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-primary" />
-            <span className="text-sm text-foreground">
-              {estimatedCount.toLocaleString()}
+            <span className="text-xs text-muted-foreground">
+              {t('selectAudience.summaryCalculating')}
             </span>
-            <span className="text-xs text-muted-foreground">estimated recipients</span>
+          </div>
+        ) : displayCount !== null ? (
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" />
+              <span className="text-sm text-foreground">
+                {displayCount.toLocaleString()}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {t('selectAudience.summaryRecipients')}
+              </span>
+            </div>
+            {audience.recipientLimit != null &&
+              estimatedCount !== null &&
+              estimatedCount > audience.recipientLimit && (
+                <p className="text-xs text-muted-foreground">
+                  {t('selectAudience.summaryCapped', {
+                    total: estimatedCount.toLocaleString(),
+                    limit: audience.recipientLimit.toLocaleString(),
+                  })}
+                </p>
+              )}
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Select an audience type to see the estimate.
+            {t('selectAudience.summaryEmpty')}
           </p>
         )}
       </div>

@@ -17,11 +17,13 @@ import {
 } from '@/components/ui/dialog';
 import { ArrowLeft, Send, Loader2, Users, Save, CalendarClock } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { cappedAudienceCount } from '@/lib/broadcasts/audience-limit';
 
 interface AudienceConfig {
   type: string;
   tagIds?: string[];
   csvContacts?: { phone: string; name?: string }[];
+  recipientLimit?: number;
 }
 
 interface Step4Props {
@@ -63,12 +65,13 @@ export function Step4ScheduleSend({
       setLoadingReach(true);
       try {
         const supabase = createClient();
+        let raw = 0;
 
         if (audience.type === 'all') {
           const { count } = await supabase
             .from('contacts')
             .select('*', { count: 'exact', head: true });
-          setEstimatedReach(count ?? 0);
+          raw = count ?? 0;
         } else if (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) {
           const { data: contactTags } = await supabase
             .from('contact_tags')
@@ -76,12 +79,14 @@ export function Step4ScheduleSend({
             .in('tag_id', audience.tagIds);
 
           const uniqueIds = new Set((contactTags ?? []).map((ct) => ct.contact_id));
-          setEstimatedReach(uniqueIds.size);
+          raw = uniqueIds.size;
         } else if (audience.type === 'csv' && audience.csvContacts) {
-          setEstimatedReach(audience.csvContacts.length);
-        } else {
-          setEstimatedReach(0);
+          raw = audience.csvContacts.length;
         }
+
+        setEstimatedReach(
+          cappedAudienceCount(raw, audience.recipientLimit),
+        );
       } finally {
         setLoadingReach(false);
       }

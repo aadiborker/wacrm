@@ -13,6 +13,7 @@ import {
   fetchCustomValueIndex,
   type VariableMapping,
 } from '@/lib/broadcasts/variables';
+import { applyRecipientLimit } from '@/lib/broadcasts/audience-limit';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
 
@@ -29,6 +30,8 @@ export interface AudienceConfig {
   csvContacts?: { phone: string; name?: string }[];
   /** Contacts carrying any of these tags are subtracted from the result. */
   excludeTagIds?: string[];
+  /** Max recipients after filters — oldest contacts first (testing / staged sends). */
+  recipientLimit?: number;
 }
 
 interface BroadcastPayload {
@@ -78,6 +81,7 @@ function buildAudienceFilter(
     customField: audience.customField,
     csvContacts: audience.csvContacts,
     excludeTagIds: audience.excludeTagIds,
+    recipientLimit: audience.recipientLimit,
     ...(headerMediaUrl?.trim() ? { headerMediaUrl: headerMediaUrl.trim() } : {}),
   };
 }
@@ -144,7 +148,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       contacts = contacts.filter((c) => !excludedIds.has(c.id));
     }
 
-    return contacts;
+    return applyRecipientLimit(contacts, audience.recipientLimit);
   }
 
   /**

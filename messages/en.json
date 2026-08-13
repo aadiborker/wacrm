@@ -793,7 +793,17 @@
         "errorLoadTags": "Failed to load tags",
         "errorLoadFields": "Failed to load custom fields",
         "errorCsvParse": "Could not parse CSV file.",
-        "errorCsvMissingPhone": "CSV must have a 'phone' column."
+        "errorCsvMissingPhone": "CSV must have a 'phone' column.",
+        "recipientLimit": "Limit recipients (optional)",
+        "recipientLimitDesc": "Send only to the first N contacts after your filters — oldest contacts first. Useful for test sends.",
+        "recipientLimitPlaceholder": "No limit",
+        "recipientLimitPreset": "{count}",
+        "recipientLimitClear": "Clear limit",
+        "summaryTitle": "Audience Summary",
+        "summaryCalculating": "Calculating…",
+        "summaryRecipients": "estimated recipients",
+        "summaryEmpty": "Select an audience type to see the estimate.",
+        "summaryCapped": "Capped at {limit} of {total} matching contacts (oldest first)."
       },
       "personalize": {
         "title": "Personalize Variables",
