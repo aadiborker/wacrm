@@ -12,6 +12,7 @@
 
 import type { TemplatePayload } from './template-validators';
 import type { TemplateButton } from '@/types';
+import { normalizeMetaTemplateLanguage } from './template-language';
 
 export interface MetaComponent {
   type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS';
@@ -149,7 +150,7 @@ export function buildMetaTemplatePayload(
   return {
     name: payload.name,
     category: CATEGORY_TO_META[payload.category],
-    language: payload.language,
+    language: normalizeMetaTemplateLanguage(payload.language),
     components,
   };
 }

@@ -19,6 +19,7 @@ import {
 } from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import { TEMPLATE_SUBMIT_PROCESSING } from '@/lib/whatsapp/template-submit-processing'
+import { normalizeMetaTemplateLanguage } from '@/lib/whatsapp/template-language'
 
 /** Image headers download from Supabase + upload to Meta — can exceed default limits. */
 export const maxDuration = 120
@@ -136,6 +137,9 @@ export async function POST(request: Request) {
       )
     }
 
+    // Meta uses `kn` / `hi`, not `kn_IN` / `hi_IN` — normalize before DB + API.
+    payload.language = normalizeMetaTemplateLanguage(payload.language)
+
     const dryRun =
       process.env.WHATSAPP_TEMPLATES_DRY_RUN === 'true' ||
       process.env.WHATSAPP_TEMPLATES_DRY_RUN === '1'
@@ -212,12 +216,21 @@ export async function POST(request: Request) {
             `[template-submit] failed for ${payload.name}:`,
             message,
           )
+          // Stale resumable-upload handles often surface as generic Invalid parameter.
+          const staleHandle =
+            payload.header_handle &&
+            /invalid parameter/i.test(message)
           await upsertTemplateRow(
             supabase,
-            buildUpsertRow(accountId, userId, payload, {
+            buildUpsertRow(accountId, userId, {
+              ...payload,
+              header_handle: staleHandle ? undefined : payload.header_handle,
+            }, {
               status: 'DRAFT',
               metaTemplateId: null,
-              submissionError: message,
+              submissionError: staleHandle
+                ? `${message} Try Edit & Retry — we cleared the cached image handle so Meta gets a fresh upload.`
+                : message,
             }),
           )
         }

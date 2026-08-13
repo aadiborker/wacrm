@@ -11,6 +11,7 @@ import {
 } from '@/lib/whatsapp/template-validators'
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureHeaderMediaHandle } from '@/lib/whatsapp/template-header-handle'
+import { normalizeMetaTemplateLanguage } from '@/lib/whatsapp/template-language'
 
 /**
  * Per-template lifecycle endpoint.
@@ -141,6 +142,8 @@ export async function PATCH(
         { status: 400 },
       )
     }
+
+    payload.language = normalizeMetaTemplateLanguage(payload.language)
 
     if (!isDryRun()) {
       const { data: config, error: configError } = await supabase

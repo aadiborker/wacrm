@@ -1550,7 +1550,7 @@
       "category": "Category",
       "language": "Language",
       "langFixed": "Language is fixed once a template exists on Meta.",
-      "langHint": "Must match the template language on Meta — e.g. <code>en_US</code> for English, <code>kn_IN</code> for Kannada.",
+      "langHint": "Must match Meta’s template language — e.g. <code>en_US</code> for English, <code>kn</code> for Kannada (not <code>kn_IN</code>).",
       
       "header": "Header",
       "headerNone": "None",
