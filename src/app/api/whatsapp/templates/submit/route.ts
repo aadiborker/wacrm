@@ -16,6 +16,9 @@ import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureHeaderMediaHandle } from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 
+/** Image headers download from Supabase + upload to Meta — can exceed default limits. */
+export const maxDuration = 120
+
 /**
  * Shared upsert payload builder — both the Meta-failure path and the
  * Meta-success path write nearly identical rows; dropping the shared

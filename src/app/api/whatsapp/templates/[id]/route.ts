@@ -37,6 +37,9 @@ const EDITABLE_STATUSES = new Set(['APPROVED', 'REJECTED', 'PAUSED'])
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/** Resubmit with image header can be slow (download + Meta resumable upload). */
+export const maxDuration = 120
+
 function isDryRun(): boolean {
   return (
     process.env.WHATSAPP_TEMPLATES_DRY_RUN === 'true' ||
