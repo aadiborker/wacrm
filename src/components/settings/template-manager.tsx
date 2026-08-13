@@ -166,6 +166,14 @@ export function TemplateManager() {
   // submit handler from POST /submit to PATCH /[id] and changes the
   // dialog title + CTA. Set to the template id to pre-fill from a row.
   const [editingId, setEditingId] = useState<string | null>(null);
+  const editingTemplate = useMemo(
+    () => (editingId ? templates.find((t) => t.id === editingId) : null),
+    [editingId, templates],
+  );
+  const isDraftRetry =
+    editingTemplate != null && !editingTemplate.meta_template_id;
+  const isMetaEdit =
+    editingTemplate != null && Boolean(editingTemplate.meta_template_id);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   // Template selected for the confirm-delete dialog. The destructive
   // action goes through this two-step so a slip on the trash icon
@@ -291,11 +299,12 @@ export function TemplateManager() {
     try {
       setSubmitting(true);
       const isEdit = editingId !== null;
-      const url = isEdit
-        ? `/api/whatsapp/templates/${editingId}`
-        : '/api/whatsapp/templates/submit';
+      const useSubmitRoute = !isEdit || isDraftRetry;
+      const url = useSubmitRoute
+        ? '/api/whatsapp/templates/submit'
+        : `/api/whatsapp/templates/${editingId}`;
       const res = await fetch(url, {
-        method: isEdit ? 'PATCH' : 'POST',
+        method: useSubmitRoute ? 'POST' : 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildSubmitPayload()),
       });
@@ -311,10 +320,10 @@ export function TemplateManager() {
       if (user) await fetchTemplates(user.id);
       toast.success(
         data.dry_run
-          ? isEdit
+          ? isMetaEdit
             ? t('toastSaveEditDry')
             : t('toastSaveNewDry')
-          : isEdit
+          : isMetaEdit
             ? t('toastSubmitEditSuccess')
             : t('toastSubmitNewSuccess'),
       );
@@ -657,6 +666,19 @@ export function TemplateManager() {
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0 ml-2">
+                    {statusKey === 'DRAFT' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEdit(template)}
+                        title={t('editRetryTitle')}
+                        aria-label={t('editRetryLabel')}
+                        className="text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 px-2"
+                      >
+                        <RotateCcw className="size-3.5" />
+                        {t('editRetry')}
+                      </Button>
+                    )}
                     {statusKey === 'APPROVED' && (
                       <Button
                         variant="ghost"
@@ -727,12 +749,18 @@ export function TemplateManager() {
         <DialogContent className="bg-popover border-border sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-popover-foreground">
-              {editingId ? t('dialogEditTitle') : t('dialogNewTitle')}
+              {isDraftRetry
+                ? t('dialogDraftRetryTitle')
+                : isMetaEdit
+                  ? t('dialogEditTitle')
+                  : t('dialogNewTitle')}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              {editingId
-                ? t('dialogEditDesc')
-                : t('dialogNewDesc')}
+              {isDraftRetry
+                ? t('dialogDraftRetryDesc')
+                : isMetaEdit
+                  ? t('dialogEditDesc')
+                  : t('dialogNewDesc')}
             </DialogDescription>
           </DialogHeader>
 
@@ -1171,9 +1199,15 @@ export function TemplateManager() {
               {submitting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  {editingId ? t('saving') : t('submitting')}
+                  {isDraftRetry
+                    ? t('retrying')
+                    : isMetaEdit
+                      ? t('saving')
+                      : t('submitting')}
                 </>
-              ) : editingId ? (
+              ) : isDraftRetry ? (
+                t('retrySubmit')
+              ) : isMetaEdit ? (
                 t('saveResubmit')
               ) : (
                 t('submitApproval')

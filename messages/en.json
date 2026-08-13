@@ -1527,6 +1527,9 @@
       "resubmitTitle": "Edit the template and resubmit to Meta for review.",
       "resubmitLabel": "Edit and resubmit template",
       "resubmit": "Resubmit",
+      "editRetryTitle": "Fix the template and submit again to Meta.",
+      "editRetryLabel": "Edit and retry template submission",
+      "editRetry": "Edit & Retry",
       "deleteMetaLocallyAria": "Delete template from Meta and locally",
       "deleteLocallyAria": "Delete template locally",
       "deleteMetaLocallyTitle": "Delete from Meta and locally",
@@ -1534,7 +1537,9 @@
       
       "dialogEditTitle": "Edit Message Template",
       "dialogNewTitle": "New Message Template",
+      "dialogDraftRetryTitle": "Fix & Retry Template",
       "dialogEditDesc": "Save your changes to re-submit to Meta. Status will flip back to PENDING during review.",
+      "dialogDraftRetryDesc": "This template never reached Meta. Fix the issue shown below and submit again — you don't need to delete and recreate it.",
       "dialogNewDesc": "Build a template and submit it to Meta for approval. Once approved, you can use it in broadcasts and the inbox.",
       "authWarning": "AUTHENTICATION templates have a fixed body + OTP button shape that needs a different builder. Create them in Meta WhatsApp Manager for now and use <bold>Sync from Meta</bold> to bring them in.",
       
@@ -1593,7 +1598,9 @@
       "cancel": "Cancel",
       "saving": "Saving…",
       "submitting": "Submitting…",
+      "retrying": "Retrying…",
       "saveResubmit": "Save & Resubmit",
+      "retrySubmit": "Retry Submit",
       "submitApproval": "Submit for Approval",
       
       "deleteDialogTitle": "Delete template?",
