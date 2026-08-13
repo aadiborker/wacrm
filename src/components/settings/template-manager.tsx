@@ -134,7 +134,7 @@ async function readApiJson(res: Response): Promise<Record<string, unknown>> {
     if (text.trimStart().startsWith('<')) {
       if (res.status === 502 || res.status === 504) {
         throw new Error(
-          `Server timeout or proxy error (HTTP ${res.status}). Image upload may have succeeded — use Edit & Retry (reuses cached media). If this persists, increase nginx proxy_read_timeout to 180s; Cloudflare free/pro plans cap at 100s. Check: pm2 logs wacrm --lines 50`,
+          `Server timeout or proxy error (HTTP ${res.status}). Submit should return in seconds and continue in the background — hard refresh the page, redeploy latest code, then retry. Check: pm2 logs wacrm --lines 50`,
         );
       }
       throw new Error(

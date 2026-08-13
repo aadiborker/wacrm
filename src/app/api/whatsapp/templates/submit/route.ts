@@ -151,46 +151,55 @@ export async function POST(request: Request) {
       metaTemplateId = `dry-run-${crypto.randomUUID()}`
       metaStatus = 'PENDING'
     } else {
-      const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
-        .select('*')
-        .eq('account_id', accountId)
-        .single()
-      if (configError || !config) {
-        return NextResponse.json(
-          {
-            error:
-              'WhatsApp not configured. Connect your WhatsApp Business account in Settings first.',
-          },
-          { status: 400 },
-        )
-      }
-      if (!config.waba_id) {
-        return NextResponse.json(
-          {
-            error:
-              'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
-          },
-          { status: 400 },
-        )
-      }
+      const templateName = payload.name
+      const templateLanguage = payload.language
 
-      const accessToken = decrypt(config.access_token)
-      const wabaId = config.waba_id
-
-      await upsertTemplateRow(
-        supabase,
-        buildUpsertRow(accountId, userId, payload, {
-          status: 'DRAFT',
-          metaTemplateId: null,
-          submissionError: TEMPLATE_SUBMIT_PROCESSING,
-        }),
-      )
-
-      // Image upload + Meta create can exceed proxy limits — run in background.
+      // Respond immediately — Cloudflare caps proxied requests at ~100s.
       void (async () => {
         const started = Date.now()
         try {
+          const { data: config, error: configError } = await supabase
+            .from('whatsapp_config')
+            .select('*')
+            .eq('account_id', accountId)
+            .single()
+          if (configError || !config) {
+            await upsertTemplateRow(
+              supabase,
+              buildUpsertRow(accountId, userId, payload, {
+                status: 'DRAFT',
+                metaTemplateId: null,
+                submissionError:
+                  'WhatsApp not configured. Connect your WhatsApp Business account in Settings first.',
+              }),
+            )
+            return
+          }
+          if (!config.waba_id) {
+            await upsertTemplateRow(
+              supabase,
+              buildUpsertRow(accountId, userId, payload, {
+                status: 'DRAFT',
+                metaTemplateId: null,
+                submissionError:
+                  'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
+              }),
+            )
+            return
+          }
+
+          await upsertTemplateRow(
+            supabase,
+            buildUpsertRow(accountId, userId, payload, {
+              status: 'DRAFT',
+              metaTemplateId: null,
+              submissionError: TEMPLATE_SUBMIT_PROCESSING,
+            }),
+          )
+
+          const accessToken = decrypt(config.access_token)
+          const wabaId = config.waba_id
+
           await reuseStoredHeaderHandle(supabase, userId, payload)
           await ensureHeaderMediaHandle(payload, accessToken)
           const metaPayload = buildMetaTemplatePayload(payload)
@@ -200,7 +209,7 @@ export async function POST(request: Request) {
             payload: metaPayload,
           })
           console.info(
-            `[template-submit] Meta accepted ${payload.name} in ${Date.now() - started}ms`,
+            `[template-submit] Meta accepted ${templateName} in ${Date.now() - started}ms`,
           )
           await upsertTemplateRow(
             supabase,
@@ -213,13 +222,11 @@ export async function POST(request: Request) {
         } catch (e) {
           const message = e instanceof Error ? e.message : 'Meta submit failed.'
           console.error(
-            `[template-submit] failed for ${payload.name}:`,
+            `[template-submit] failed for ${templateName}:`,
             message,
           )
-          // Stale resumable-upload handles often surface as generic Invalid parameter.
           const staleHandle =
-            payload.header_handle &&
-            /invalid parameter/i.test(message)
+            payload.header_handle && /invalid parameter/i.test(message)
           await upsertTemplateRow(
             supabase,
             buildUpsertRow(accountId, userId, {
@@ -232,16 +239,21 @@ export async function POST(request: Request) {
                 ? `${message} Try Edit & Retry — we cleared the cached image handle so Meta gets a fresh upload.`
                 : message,
             }),
-          )
+          ).catch((err) => {
+            console.error('[template-submit] failed to persist error row:', err)
+          })
         }
       })()
 
-      return NextResponse.json({
-        accepted: true,
-        processing: true,
-        name: payload.name,
-        language: payload.language,
-      }, { status: 202 })
+      return NextResponse.json(
+        {
+          accepted: true,
+          processing: true,
+          name: templateName,
+          language: templateLanguage,
+        },
+        { status: 202 },
+      )
     }
 
     const { data: row, error: upsertErr } = await upsertTemplateRow(
