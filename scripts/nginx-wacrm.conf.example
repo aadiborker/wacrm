@@ -1,0 +1,31 @@
+# Example nginx site block for WACRM / ReplyFlow (PM2 on :3000).
+# Image-header template submit can take 60–120s (Supabase download + Meta upload).
+#
+#   sudo cp scripts/nginx-wacrm.conf.example /etc/nginx/sites-available/wacrm
+#   sudo ln -sf /etc/nginx/sites-available/wacrm /etc/nginx/sites-enabled/wacrm
+#   sudo nginx -t && sudo systemctl reload nginx
+
+server {
+    listen 80;
+    server_name replyflow.thewebpeople.co;
+
+    client_max_body_size 20m;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+
+        # Default nginx 60s often kills image-header template submit.
+        proxy_connect_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+        send_timeout 120s;
+    }
+}

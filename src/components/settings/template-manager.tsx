@@ -118,15 +118,20 @@ const COMMON_LANGUAGE_CODES = [
   'lt',
 ];
 
-/** API routes should return JSON; HTML usually means a proxy/500 page. */
+/** API routes should return JSON; HTML usually means a proxy timeout/502 page. */
 async function readApiJson(res: Response): Promise<Record<string, unknown>> {
   const text = await res.text();
   try {
     return JSON.parse(text) as Record<string, unknown>;
   } catch {
     if (text.trimStart().startsWith('<')) {
+      if (res.status === 502 || res.status === 504) {
+        throw new Error(
+          `Server timeout or proxy error (HTTP ${res.status}). Image-header submit downloads the image and uploads it to Meta — this can take 1–2 minutes behind nginx. Increase proxy_read_timeout to 120s, deploy latest code, restart PM2, then retry. Check: pm2 logs wacrm --lines 50`,
+        );
+      }
       throw new Error(
-        `Server error (HTTP ${res.status}). Image-header templates need META_APP_ID on the server — check .env.local and restart PM2.`,
+        `Server returned HTML instead of JSON (HTTP ${res.status}). Check pm2 logs: pm2 logs wacrm --lines 50`,
       );
     }
     throw new Error(`Invalid server response (HTTP ${res.status}).`);

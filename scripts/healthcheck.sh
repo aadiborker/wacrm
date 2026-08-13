@@ -155,6 +155,16 @@ if command -v curl >/dev/null 2>&1; then
   else
     bad "Local http://127.0.0.1:${PORT} -> HTTP $local_code"
   fi
+
+  runtime_json=$(curl -s --max-time 5 "http://127.0.0.1:${PORT}/api/health/runtime" || echo "")
+  if echo "$runtime_json" | grep -q '"meta_app_id_configured":true'; then
+    ok "Runtime META_APP_ID loaded in Node process"
+  elif echo "$runtime_json" | grep -q '"meta_app_id_configured":false'; then
+    bad "META_APP_ID missing in Node process (file may exist but PM2 needs restart after deploy)"
+    info "cp $APP_DIR/.env.local $APP_DIR/.next/standalone/.env.local && pm2 restart $PM2_NAME"
+  else
+    bad "Could not probe /api/health/runtime (got: ${runtime_json:-empty})"
+  fi
 else
   bad "curl not available"
 fi
