@@ -40,7 +40,8 @@ done
 
 echo "==> Restart PM2 (standalone)"
 pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
-pm2 start "$APP_DIR/.next/standalone/server.js" \
+PORT="${PORT:-3000}" HOSTNAME="${HOSTNAME:-0.0.0.0}" KEEP_ALIVE_TIMEOUT="${KEEP_ALIVE_TIMEOUT:-180000}" \
+  pm2 start "$APP_DIR/.next/standalone/server.js" \
   --name "$PM2_NAME" \
   --cwd "$APP_DIR/.next/standalone"
 pm2 save

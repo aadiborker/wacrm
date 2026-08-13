@@ -94,7 +94,9 @@ export async function PATCH(
     // meta_template_id and status — fetch explicitly.
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
-      .select('id, name, status, meta_template_id, language')
+      .select(
+        'id, name, status, meta_template_id, language, header_handle, header_media_url',
+      )
       .eq('id', id)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -154,8 +156,16 @@ export async function PATCH(
       }
       const accessToken = decrypt(config.access_token)
 
-      // Image/video headers need a fresh Resumable-Upload handle on every edit
-      // (Meta replaces components wholesale). Derive from header_media_url.
+      if (
+        !payload.header_handle &&
+        existing.header_handle &&
+        existing.header_media_url === payload.header_media_url
+      ) {
+        payload.header_handle = existing.header_handle
+      }
+
+      // Image/video headers need a Resumable-Upload handle on edit when the
+      // media URL changed. Reuse the stored handle when unchanged.
       try {
         await ensureHeaderMediaHandle(payload, accessToken)
       } catch (e) {

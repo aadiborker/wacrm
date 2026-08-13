@@ -73,6 +73,7 @@ interface TemplateFormData {
   header_format: HeaderFormat;
   header_content: string;
   header_media_url: string;
+  header_handle: string;
   header_sample: string;
   body_text: string;
   body_samples: string[];
@@ -87,6 +88,7 @@ const emptyForm: TemplateFormData = {
   header_format: 'none',
   header_content: '',
   header_media_url: '',
+  header_handle: '',
   header_sample: '',
   body_text: '',
   body_samples: [],
@@ -127,7 +129,7 @@ async function readApiJson(res: Response): Promise<Record<string, unknown>> {
     if (text.trimStart().startsWith('<')) {
       if (res.status === 502 || res.status === 504) {
         throw new Error(
-          `Server timeout or proxy error (HTTP ${res.status}). Image-header submit downloads the image and uploads it to Meta — this can take 1–2 minutes behind nginx. Increase proxy_read_timeout to 120s, deploy latest code, restart PM2, then retry. Check: pm2 logs wacrm --lines 50`,
+          `Server timeout or proxy error (HTTP ${res.status}). Image upload may have succeeded — use Edit & Retry (reuses cached media). If this persists, increase nginx proxy_read_timeout to 180s; Cloudflare free/pro plans cap at 100s. Check: pm2 logs wacrm --lines 50`,
         );
       }
       throw new Error(
@@ -260,6 +262,10 @@ export function TemplateManager() {
         form.header_format !== 'none' && form.header_format !== 'text'
           ? form.header_media_url.trim() || undefined
           : undefined,
+      header_handle:
+        form.header_format === 'image' || form.header_format === 'video'
+          ? form.header_handle.trim() || undefined
+          : undefined,
       body_text: form.body_text.trim(),
       footer_text: form.footer_text.trim() || undefined,
       buttons: form.buttons.length > 0 ? form.buttons : undefined,
@@ -277,6 +283,7 @@ export function TemplateManager() {
       header_format: (template.header_type ?? 'none') as HeaderFormat,
       header_content: template.header_content ?? '',
       header_media_url: template.header_media_url ?? '',
+      header_handle: template.header_handle ?? '',
       header_sample: template.sample_values?.header?.[0] ?? '',
       body_text: template.body_text,
       body_samples: template.sample_values?.body ?? [],
@@ -532,7 +539,11 @@ export function TemplateManager() {
     setUploadingHeader(true);
     try {
       const { publicUrl } = await uploadAccountMedia('chat-media', file);
-      setForm((f) => ({ ...f, header_media_url: publicUrl }));
+      setForm((f) => ({
+        ...f,
+        header_media_url: publicUrl,
+        header_handle: '',
+      }));
       toast.success(
         format === 'video' ? t('toastVideoUploadSuccess') : t('toastUploadSuccess'),
       );
@@ -960,7 +971,11 @@ export function TemplateManager() {
                     placeholder={t('mediaUrlPlaceholder', { format: form.header_format })}
                     value={form.header_media_url}
                     onChange={(e) =>
-                      setForm({ ...form, header_media_url: e.target.value })
+                      setForm({
+                        ...form,
+                        header_media_url: e.target.value,
+                        header_handle: '',
+                      })
                     }
                     className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                   />

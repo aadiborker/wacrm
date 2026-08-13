@@ -11,7 +11,8 @@ vi.mock('@/lib/webhooks/ssrf', () => ({
   isDeliverableUrl: vi.fn(async () => true),
 }));
 
-import { ensureImageHeaderHandle } from './template-header-handle';
+import { ensureImageHeaderHandle, reuseStoredHeaderHandle } from './template-header-handle';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { uploadResumableMedia } from './meta-api';
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
 import type { TemplatePayload } from './template-validators';
@@ -189,5 +190,28 @@ describe('ensureImageHeaderHandle', () => {
 
     const init = (fetchSpy.mock.calls[0] as unknown[])[1] as RequestInit;
     expect(init).toMatchObject({ redirect: 'manual' });
+  });
+});
+
+describe('reuseStoredHeaderHandle', () => {
+  it('reuses a stored handle when the media URL is unchanged', async () => {
+    const p = payload({ header_handle: undefined });
+    const supabase = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn(async () => ({
+            data: {
+              header_handle: 'CACHED_HANDLE',
+              header_media_url: 'https://x.test/img.jpg',
+            },
+          })),
+        })),
+      })),
+    } as unknown as SupabaseClient;
+
+    const reused = await reuseStoredHeaderHandle(supabase, 'user-1', p);
+    expect(reused).toBe(true);
+    expect(p.header_handle).toBe('CACHED_HANDLE');
   });
 });

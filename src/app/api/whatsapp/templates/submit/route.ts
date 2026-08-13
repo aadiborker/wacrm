@@ -13,7 +13,10 @@ import {
   type TemplatePayload,
 } from '@/lib/whatsapp/template-validators'
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
-import { ensureHeaderMediaHandle } from '@/lib/whatsapp/template-header-handle'
+import {
+  ensureHeaderMediaHandle,
+  reuseStoredHeaderHandle,
+} from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 
 /** Image headers download from Supabase + upload to Meta — can exceed default limits. */
@@ -170,9 +173,9 @@ export async function POST(request: Request) {
       const accessToken = decrypt(config.access_token)
 
       // Image/video headers need a Resumable-Upload handle (Meta rejects a
-      // plain URL at creation). Derive it from header_media_url before
-      // building the payload. Surfaces a 400 with an actionable message
-      // (missing META_APP_ID, unreachable URL, wrong type/size).
+      // plain URL at creation). Reuse a cached handle when retrying the same
+      // media URL so nginx/Cloudflare doesn't time out on re-upload.
+      await reuseStoredHeaderHandle(supabase, userId, payload)
       try {
         await ensureHeaderMediaHandle(payload, accessToken)
       } catch (e) {
@@ -183,6 +186,21 @@ export async function POST(request: Request) {
           },
           { status: 400 },
         )
+      }
+
+      // Persist handle before Meta submit — if the proxy times out during
+      // template creation, retry can skip re-downloading the header media.
+      if (payload.header_handle) {
+        await upsertTemplateRow(
+          supabase,
+          buildUpsertRow(accountId, userId, payload, {
+            status: 'DRAFT',
+            metaTemplateId: null,
+            submissionError: null,
+          }),
+        ).catch((err) => {
+          console.warn('[template-submit] pre-Meta draft save failed:', err)
+        })
       }
 
       const metaPayload = buildMetaTemplatePayload(payload)

@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { uploadResumableMedia } from '@/lib/whatsapp/meta-api'
 import type { TemplatePayload } from '@/lib/whatsapp/template-validators'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
@@ -37,14 +38,52 @@ export async function ensureImageHeaderHandle(
   return ensureHeaderMediaHandle(payload, accessToken)
 }
 
+/**
+ * Reuse a Meta header_handle already stored for this (user, name, language)
+ * when the media URL is unchanged — skips a slow re-download + re-upload on retry.
+ */
+export async function reuseStoredHeaderHandle(
+  supabase: SupabaseClient,
+  userId: string,
+  payload: TemplatePayload,
+): Promise<boolean> {
+  if (payload.header_handle) return true
+  const kind = mediaKind(payload.header_type)
+  if (!kind || !payload.header_media_url) return false
+
+  const { data } = await supabase
+    .from('message_templates')
+    .select('header_handle, header_media_url')
+    .eq('user_id', userId)
+    .eq('name', payload.name)
+    .eq('language', payload.language)
+    .maybeSingle()
+
+  if (
+    data?.header_handle &&
+    data.header_media_url === payload.header_media_url
+  ) {
+    payload.header_handle = data.header_handle
+    return true
+  }
+  return false
+}
+
 export async function ensureHeaderMediaHandle(
   payload: TemplatePayload,
   accessToken: string,
 ): Promise<void> {
   const kind = mediaKind(payload.header_type)
   if (!kind) return
-  if (payload.header_handle) return
+  if (payload.header_handle) {
+    console.info(
+      `[template-header] reusing existing handle for ${payload.name}`,
+    )
+    return
+  }
   if (!payload.header_media_url) return
+
+  const started = Date.now()
 
   const appId = process.env.META_APP_ID
   if (!appId) {
@@ -128,4 +167,7 @@ export async function ensureHeaderMediaHandle(
     bytes,
   })
   payload.header_handle = handle
+  console.info(
+    `[template-header] uploaded ${kind} for ${payload.name} (${bytes.byteLength} bytes) in ${Date.now() - started}ms`,
+  )
 }
