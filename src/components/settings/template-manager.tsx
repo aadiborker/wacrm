@@ -118,6 +118,21 @@ const COMMON_LANGUAGE_CODES = [
   'lt',
 ];
 
+/** API routes should return JSON; HTML usually means a proxy/500 page. */
+async function readApiJson(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    if (text.trimStart().startsWith('<')) {
+      throw new Error(
+        `Server error (HTTP ${res.status}). Image-header templates need META_APP_ID on the server — check .env.local and restart PM2.`,
+      );
+    }
+    throw new Error(`Invalid server response (HTTP ${res.status}).`);
+  }
+}
+
 function emptyButton(type: TemplateButton['type']): TemplateButton {
   switch (type) {
     case 'QUICK_REPLY':
@@ -279,10 +294,11 @@ export function TemplateManager() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildSubmitPayload()),
       });
-      const data = await res.json();
+      const data = await readApiJson(res);
       if (!res.ok) {
         throw new Error(
-          data?.error || `${isEdit ? 'Edit' : 'Submit'} failed (HTTP ${res.status})`,
+          (typeof data.error === 'string' ? data.error : null) ||
+            `${isEdit ? 'Edit' : 'Submit'} failed (HTTP ${res.status})`,
         );
       }
       // Refresh first, then close — re-opening the dialog
@@ -313,14 +329,20 @@ export function TemplateManager() {
     setSyncing(true);
     try {
       const res = await fetch('/api/whatsapp/templates/sync', { method: 'POST' });
-      const data = await res.json();
+      const data = await readApiJson(res);
       if (!res.ok) {
-        throw new Error(data?.error || `Sync failed (HTTP ${res.status})`);
+        throw new Error(
+          (typeof data.error === 'string' ? data.error : null) ||
+            `Sync failed (HTTP ${res.status})`,
+        );
       }
       toast.success(
-        t('toastSyncCount', { total: data.total }) +
+        t('toastSyncCount', { total: data.total as number }) +
           (data.inserted || data.updated
-            ? t('toastSyncDetails', { inserted: data.inserted, updated: data.updated })
+            ? t('toastSyncDetails', {
+                inserted: data.inserted as number,
+                updated: data.updated as number,
+              })
             : ''),
       );
       if (Array.isArray(data.errors) && data.errors.length > 0) {
