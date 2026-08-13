@@ -7,6 +7,7 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-$HOME/wacrm}"
 PM2_NAME="${PM2_NAME:-wacrm}"
+PORT="${PORT:-3000}"
 
 cd "$APP_DIR"
 
@@ -39,14 +40,25 @@ done
 # Worker is also inlined at runtime via pdf-parse/worker getData().
 
 echo "==> Restart PM2 (standalone)"
-pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
-PORT="${PORT:-3000}" HOSTNAME="${HOSTNAME:-0.0.0.0}" KEEP_ALIVE_TIMEOUT="${KEEP_ALIVE_TIMEOUT:-180000}" \
-  pm2 start "$APP_DIR/.next/standalone/server.js" \
-  --name "$PM2_NAME" \
-  --cwd "$APP_DIR/.next/standalone"
+APP_DIR="$APP_DIR" PM2_NAME="$PM2_NAME" PORT="$PORT" \
+  pm2 startOrReload "$APP_DIR/scripts/ecosystem.config.cjs" --update-env
 pm2 save
 # Drop pre-deploy noise so healthcheck doesn't fail on old InvariantError lines.
 pm2 flush "$PM2_NAME" >/dev/null 2>&1 || pm2 flush >/dev/null 2>&1 || true
+
+echo "==> Wait for app on :${PORT}"
+for i in $(seq 1 45); do
+  if curl -sf --max-time 3 "http://127.0.0.1:${PORT}/api/health/runtime" >/dev/null; then
+    echo "OK   App responding before healthcheck"
+    break
+  fi
+  if (( i == 45 )); then
+    echo "FAIL App never responded on :${PORT}"
+    pm2 logs "$PM2_NAME" --lines 50 --nostream 2>/dev/null || true
+    exit 1
+  fi
+  sleep 1
+done
 
 echo "==> Healthcheck"
 bash "$APP_DIR/scripts/healthcheck.sh"
