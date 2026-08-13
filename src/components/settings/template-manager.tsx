@@ -308,6 +308,7 @@ export function TemplateManager() {
     userId: string,
     name: string,
     language: string,
+    options?: { waitForPending?: boolean },
   ): Promise<void> {
     const deadline = Date.now() + 120_000;
     while (Date.now() < deadline) {
@@ -322,10 +323,15 @@ export function TemplateManager() {
       if (error) throw error;
       if (!data) continue;
       if (data.submission_error === TEMPLATE_SUBMIT_PROCESSING) continue;
-      if (data.meta_template_id || data.status === 'PENDING') return;
       if (data.submission_error) {
         throw new Error(data.submission_error);
       }
+      // Meta edit: row already has meta_template_id — wait for PENDING.
+      if (options?.waitForPending) {
+        if (data.status === 'PENDING') return;
+        continue;
+      }
+      if (data.meta_template_id || data.status === 'PENDING') return;
     }
     throw new Error(t('toastSubmitPollTimeout'));
   }
@@ -353,6 +359,7 @@ export function TemplateManager() {
           user!.id,
           String(data.name),
           String(data.language),
+          { waitForPending: isMetaEdit && !isDraftRetry },
         );
         if (user) await fetchTemplates(user.id);
         toast.success(

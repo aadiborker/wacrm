@@ -1,17 +1,15 @@
+import { after } from 'next/server'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import {
-  deleteMessageTemplate,
-  editMessageTemplate,
-} from '@/lib/whatsapp/meta-api'
+import { deleteMessageTemplate } from '@/lib/whatsapp/meta-api'
 import {
   validateTemplatePayload,
   type TemplatePayload,
 } from '@/lib/whatsapp/template-validators'
-import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
-import { ensureHeaderMediaHandle } from '@/lib/whatsapp/template-header-handle'
 import { normalizeMetaTemplateLanguage } from '@/lib/whatsapp/template-language'
+import { TEMPLATE_SUBMIT_PROCESSING } from '@/lib/whatsapp/template-submit-processing'
+import { backgroundEditTemplate } from '@/lib/whatsapp/template-submit-background'
 
 /**
  * Per-template lifecycle endpoint.
@@ -146,62 +144,45 @@ export async function PATCH(
     payload.language = normalizeMetaTemplateLanguage(payload.language)
 
     if (!isDryRun()) {
-      const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
-        .select('*')
-        .eq('account_id', accountId)
-        .single()
-      if (configError || !config) {
-        return NextResponse.json(
-          { error: 'WhatsApp not configured.' },
-          { status: 400 },
-        )
-      }
-      const accessToken = decrypt(config.access_token)
-
-      if (
-        !payload.header_handle &&
-        existing.header_handle &&
-        existing.header_media_url === payload.header_media_url
-      ) {
-        payload.header_handle = existing.header_handle
-      }
-
-      // Image/video headers need a Resumable-Upload handle on edit when the
-      // media URL changed. Reuse the stored handle when unchanged.
-      try {
-        await ensureHeaderMediaHandle(payload, accessToken)
-      } catch (e) {
-        return NextResponse.json(
-          {
-            error:
-              e instanceof Error ? e.message : 'Header media upload failed.',
-          },
-          { status: 400 },
-        )
-      }
-
-      const metaPayload = buildMetaTemplatePayload(payload)
-      try {
-        await editMessageTemplate({
-          metaTemplateId: existing.meta_template_id,
-          accessToken,
-          components: metaPayload.components,
+      const { error: markErr } = await supabase
+        .from('message_templates')
+        .update({
+          submission_error: TEMPLATE_SUBMIT_PROCESSING,
+          last_submitted_at: new Date().toISOString(),
         })
-      } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta edit failed.'
-        await supabase
-          .from('message_templates')
-          .update({
-            submission_error: message,
-            last_submitted_at: new Date().toISOString(),
-          })
-          .eq('id', id)
-        return NextResponse.json({ error: message }, { status: 502 })
+        .eq('id', id)
+      if (markErr) {
+        return NextResponse.json(
+          { error: `Failed to queue edit: ${markErr.message}` },
+          { status: 500 },
+        )
       }
+
+      after(() =>
+        backgroundEditTemplate({
+          supabase,
+          accountId,
+          userId: user.id,
+          templateId: id,
+          metaTemplateId: existing.meta_template_id,
+          existingHeaderHandle: existing.header_handle,
+          existingHeaderMediaUrl: existing.header_media_url,
+          payload,
+        }),
+      )
+
+      return NextResponse.json(
+        {
+          accepted: true,
+          processing: true,
+          name: payload.name,
+          language: payload.language,
+        },
+        { status: 202 },
+      )
     }
 
-    // Meta accepted the edit — status flips back to PENDING for review.
+    // Dry run — update locally without calling Meta.
     const { data: row, error: updErr } = await supabase
       .from('message_templates')
       .update({
@@ -227,7 +208,7 @@ export async function PATCH(
     if (updErr) {
       return NextResponse.json(
         {
-          error: `Edited on Meta but failed to save locally: ${updErr.message}. Run "Sync from Meta" to recover.`,
+          error: `Failed to save locally: ${updErr.message}.`,
         },
         { status: 500 },
       )
@@ -236,7 +217,7 @@ export async function PATCH(
     return NextResponse.json({
       success: true,
       template: row,
-      dry_run: isDryRun(),
+      dry_run: true,
     })
   } catch (error) {
     console.error('Error editing template:', error)
