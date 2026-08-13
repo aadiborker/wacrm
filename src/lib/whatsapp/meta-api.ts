@@ -12,6 +12,9 @@
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
+/** Meta template create can be slow; cap wait so nginx gets JSON, not a hung connection. */
+const META_TEMPLATE_SUBMIT_TIMEOUT_MS = 90_000
+
 export interface MetaSendResult {
   messageId: string
 }
@@ -563,6 +566,7 @@ export async function submitMessageTemplate(
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(META_TEMPLATE_SUBMIT_TIMEOUT_MS),
   })
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)

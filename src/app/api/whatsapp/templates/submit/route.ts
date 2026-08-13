@@ -18,6 +18,7 @@ import {
   reuseStoredHeaderHandle,
 } from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
+import { TEMPLATE_SUBMIT_PROCESSING } from '@/lib/whatsapp/template-submit-processing'
 
 /** Image headers download from Supabase + upload to Meta — can exceed default limits. */
 export const maxDuration = 120
@@ -171,69 +172,63 @@ export async function POST(request: Request) {
       }
 
       const accessToken = decrypt(config.access_token)
+      const wabaId = config.waba_id
 
-      // Image/video headers need a Resumable-Upload handle (Meta rejects a
-      // plain URL at creation). Reuse a cached handle when retrying the same
-      // media URL so nginx/Cloudflare doesn't time out on re-upload.
-      await reuseStoredHeaderHandle(supabase, userId, payload)
-      try {
-        await ensureHeaderMediaHandle(payload, accessToken)
-      } catch (e) {
-        return NextResponse.json(
-          {
-            error:
-              e instanceof Error ? e.message : 'Header media upload failed.',
-          },
-          { status: 400 },
-        )
-      }
+      await upsertTemplateRow(
+        supabase,
+        buildUpsertRow(accountId, userId, payload, {
+          status: 'DRAFT',
+          metaTemplateId: null,
+          submissionError: TEMPLATE_SUBMIT_PROCESSING,
+        }),
+      )
 
-      // Persist handle before Meta submit — if the proxy times out during
-      // template creation, retry can skip re-downloading the header media.
-      if (payload.header_handle) {
-        await upsertTemplateRow(
-          supabase,
-          buildUpsertRow(accountId, userId, payload, {
-            status: 'DRAFT',
-            metaTemplateId: null,
-            submissionError: null,
-          }),
-        ).catch((err) => {
-          console.warn('[template-submit] pre-Meta draft save failed:', err)
-        })
-      }
+      // Image upload + Meta create can exceed proxy limits — run in background.
+      void (async () => {
+        const started = Date.now()
+        try {
+          await reuseStoredHeaderHandle(supabase, userId, payload)
+          await ensureHeaderMediaHandle(payload, accessToken)
+          const metaPayload = buildMetaTemplatePayload(payload)
+          const meta = await submitMessageTemplate({
+            wabaId,
+            accessToken,
+            payload: metaPayload,
+          })
+          console.info(
+            `[template-submit] Meta accepted ${payload.name} in ${Date.now() - started}ms`,
+          )
+          await upsertTemplateRow(
+            supabase,
+            buildUpsertRow(accountId, userId, payload, {
+              status: normalizeStatus(meta.status),
+              metaTemplateId: meta.id,
+              submissionError: null,
+            }),
+          )
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Meta submit failed.'
+          console.error(
+            `[template-submit] failed for ${payload.name}:`,
+            message,
+          )
+          await upsertTemplateRow(
+            supabase,
+            buildUpsertRow(accountId, userId, payload, {
+              status: 'DRAFT',
+              metaTemplateId: null,
+              submissionError: message,
+            }),
+          )
+        }
+      })()
 
-      const metaPayload = buildMetaTemplatePayload(payload)
-      try {
-        const meta = await submitMessageTemplate({
-          wabaId: config.waba_id,
-          accessToken,
-          payload: metaPayload,
-        })
-        metaTemplateId = meta.id
-        metaStatus = meta.status
-      } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta submit failed.'
-        // Persist the failure so the user can retry; row stays DRAFT
-        // until they fix and re-submit.
-        await upsertTemplateRow(
-          supabase,
-          buildUpsertRow(accountId, userId, payload, {
-            status: 'DRAFT',
-            metaTemplateId: null,
-            submissionError: message,
-          }),
-        )
-        const isRateLimit = /\b429\b/.test(message)
-        return NextResponse.json(
-          {
-            error: isRateLimit
-              ? 'Meta rate limit hit (100 template creates per hour). Try again later.'
-              : message,
-          },
-          { status: isRateLimit ? 429 : 502 },
-        )
-      }
+      return NextResponse.json({
+        accepted: true,
+        processing: true,
+        name: payload.name,
+        language: payload.language,
+      }, { status: 202 })
     }
 
     const { data: row, error: upsertErr } = await upsertTemplateRow(

@@ -55,6 +55,7 @@ import {
   extractVariableIndices,
   TEMPLATE_LIMITS,
 } from '@/lib/whatsapp/template-validators';
+import { TEMPLATE_SUBMIT_PROCESSING } from '@/lib/whatsapp/template-submit-processing';
 
 const CATEGORIES = ['Marketing', 'Utility', 'Authentication'] as const;
 type HeaderFormat = 'none' | 'text' | 'image' | 'video' | 'document';
@@ -119,6 +120,10 @@ const COMMON_LANGUAGE_CODES = [
   'tr',
   'lt',
 ];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** API routes should return JSON; HTML usually means a proxy timeout/502 page. */
 async function readApiJson(res: Response): Promise<Record<string, unknown>> {
@@ -299,6 +304,32 @@ export function TemplateManager() {
     setDialogOpen(true);
   }
 
+  async function pollTemplateSubmitOutcome(
+    userId: string,
+    name: string,
+    language: string,
+  ): Promise<void> {
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      await sleep(2000);
+      const { data, error } = await supabase
+        .from('message_templates')
+        .select('status, meta_template_id, submission_error')
+        .eq('user_id', userId)
+        .eq('name', name)
+        .eq('language', language)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) continue;
+      if (data.submission_error === TEMPLATE_SUBMIT_PROCESSING) continue;
+      if (data.meta_template_id || data.status === 'PENDING') return;
+      if (data.submission_error) {
+        throw new Error(data.submission_error);
+      }
+    }
+    throw new Error(t('toastSubmitPollTimeout'));
+  }
+
   async function handleSubmit() {
     // AUTHENTICATION is blocked by the persistent banner + disabled
     // submit button; this is a defensive second line of defense.
@@ -316,6 +347,22 @@ export function TemplateManager() {
         body: JSON.stringify(buildSubmitPayload()),
       });
       const data = await readApiJson(res);
+      if (res.status === 202 && data.processing) {
+        toast.info(t('toastSubmitProcessing'));
+        await pollTemplateSubmitOutcome(
+          user!.id,
+          String(data.name),
+          String(data.language),
+        );
+        if (user) await fetchTemplates(user.id);
+        toast.success(
+          isMetaEdit ? t('toastSubmitEditSuccess') : t('toastSubmitNewSuccess'),
+        );
+        setDialogOpen(false);
+        setForm(emptyForm);
+        setEditingId(null);
+        return;
+      }
       if (!res.ok) {
         throw new Error(
           (typeof data.error === 'string' ? data.error : null) ||
@@ -645,12 +692,23 @@ export function TemplateManager() {
                         {template.footer_text}
                       </p>
                     )}
-                    {(template.rejection_reason || template.submission_error) && (
+                    {(template.rejection_reason ||
+                      (template.submission_error &&
+                        template.submission_error !==
+                          TEMPLATE_SUBMIT_PROCESSING)) && (
                       <div className="flex items-start gap-1.5 text-xs text-red-400 bg-red-950/20 border border-red-900/40 rounded px-2 py-1.5">
                         <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
                         <span>
                           {template.rejection_reason || template.submission_error}
                         </span>
+                      </div>
+                    )}
+                    {template.submission_error === TEMPLATE_SUBMIT_PROCESSING && (
+                      <div
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 border border-border rounded px-2 py-1.5"
+                      >
+                        <Loader2 className="size-3.5 animate-spin shrink-0" />
+                        <span>{t('submittingToMeta')}</span>
                       </div>
                     )}
                     {(sentIso || template.approved_at) && (

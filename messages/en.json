@@ -1611,6 +1611,9 @@
       
       "toastLoadFailed": "Failed to load templates",
       "toastSubmitFailed": "Failed to submit",
+      "toastSubmitProcessing": "Submitting to Meta — this can take up to a minute…",
+      "toastSubmitPollTimeout": "Timed out waiting for Meta. Refresh the page — submit may still complete.",
+      "submittingToMeta": "Submitting to Meta…",
       "toastSubmitEditSuccess": "Edit submitted — Meta typically reviews within 24 hours.",
       "toastSubmitNewSuccess": "Submitted to Meta — typical review time is 24 hours. Status updates automatically.",
       "toastSaveEditDry": "Template updated (dry-run — no Meta call)",
