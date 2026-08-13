@@ -1545,7 +1545,7 @@
       "category": "Category",
       "language": "Language",
       "langFixed": "Language is fixed once a template exists on Meta.",
-      "langHint": "Must match the exact code on Meta — <code>en_US</code> and <code>en</code> are distinct.",
+      "langHint": "Must match the template language on Meta — e.g. <code>en_US</code> for English, <code>kn_IN</code> for Kannada.",
       
       "header": "Header",
       "headerNone": "None",
