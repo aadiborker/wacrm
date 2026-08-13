@@ -3,7 +3,7 @@ export const BROADCAST_RECIPIENT_LIMIT_MAX = 10_000;
 
 /**
  * After audience + exclude resolution, cap to the first N contacts
- * (oldest by `created_at`, then `id` for stability).
+ * (newest by `created_at`, then `id` — same order as the Contacts page).
  */
 export function applyRecipientLimit<T extends { created_at?: string; id: string }>(
   contacts: T[],
@@ -19,8 +19,8 @@ export function applyRecipientLimit<T extends { created_at?: string; id: string 
   const sorted = [...contacts].sort((a, b) => {
     const ac = a.created_at ?? '';
     const bc = b.created_at ?? '';
-    if (ac !== bc) return ac.localeCompare(bc);
-    return a.id.localeCompare(b.id);
+    if (ac !== bc) return bc.localeCompare(ac);
+    return b.id.localeCompare(a.id);
   });
   return sorted.slice(0, recipientLimit);
 }

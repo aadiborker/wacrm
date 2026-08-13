@@ -93,6 +93,29 @@ interface BroadcastApiResult {
   error?: string;
 }
 
+/** PostgREST default max rows per request. */
+const CONTACT_FETCH_PAGE = 1000;
+
+async function fetchAllContacts(
+  supabase: ReturnType<typeof createClient>,
+): Promise<Contact[]> {
+  const all: Contact[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + CONTACT_FETCH_PAGE - 1);
+    if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
+    const batch = data ?? [];
+    all.push(...batch);
+    if (batch.length < CONTACT_FETCH_PAGE) break;
+    offset += CONTACT_FETCH_PAGE;
+  }
+  return all;
+}
+
 export function useBroadcastSending(): UseBroadcastSendingReturn {
   const { accountId } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
@@ -104,9 +127,21 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     let contacts: Contact[] = [];
 
     if (audience.type === 'all') {
-      const { data, error } = await supabase.from('contacts').select('*');
-      if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
-      contacts = data ?? [];
+      const hasExclude =
+        audience.excludeTagIds && audience.excludeTagIds.length > 0;
+      const limit = audience.recipientLimit;
+
+      if (limit && limit > 0 && !hasExclude) {
+        const { data, error } = await supabase
+          .from('contacts')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
+        contacts = data ?? [];
+      } else {
+        contacts = await fetchAllContacts(supabase);
+      }
     } else if (
       audience.type === 'tags' &&
       audience.tagIds &&

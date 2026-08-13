@@ -795,7 +795,7 @@
         "errorCsvParse": "Could not parse CSV file.",
         "errorCsvMissingPhone": "CSV must have a 'phone' column.",
         "recipientLimit": "Limit recipients (optional)",
-        "recipientLimitDesc": "Send only to the first N contacts after your filters — oldest contacts first. Useful for test sends.",
+        "recipientLimitDesc": "Send only to the first N contacts after your filters — newest first, same order as the Contacts page. Useful for test sends.",
         "recipientLimitPlaceholder": "No limit",
         "recipientLimitPreset": "{count}",
         "recipientLimitClear": "Clear limit",
@@ -803,7 +803,7 @@
         "summaryCalculating": "Calculating…",
         "summaryRecipients": "estimated recipients",
         "summaryEmpty": "Select an audience type to see the estimate.",
-        "summaryCapped": "Capped at {limit} of {total} matching contacts (oldest first)."
+        "summaryCapped": "Capped at {limit} of {total} matching contacts (newest first)."
       },
       "personalize": {
         "title": "Personalize Variables",

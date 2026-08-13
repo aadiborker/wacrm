@@ -15,9 +15,9 @@ describe('applyRecipientLimit', () => {
     expect(applyRecipientLimit(contacts)).toHaveLength(3);
   });
 
-  it('returns oldest contacts first up to the limit', () => {
+  it('returns newest contacts first up to the limit', () => {
     const limited = applyRecipientLimit(contacts, 2);
-    expect(limited.map((c) => c.id)).toEqual(['a', 'b']);
+    expect(limited.map((c) => c.id)).toEqual(['c', 'b']);
   });
 
   it('does not mutate the input array', () => {
