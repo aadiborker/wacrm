@@ -281,7 +281,8 @@
       "finalUrl": "Final URL: {url}",
       "back": "Back",
       "cancel": "Cancel",
-      "send": "Send template"
+      "send": "Send template",
+      "noContactContext": "Open a conversation or contact to map fields and preview this template."
     },
     "sidebar": {
       "contactInfo": "Contact info",
