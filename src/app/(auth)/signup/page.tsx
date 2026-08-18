@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { MessageSquare, CheckCircle, UsersRound } from "lucide-react";
+import { AuthLegalLinks } from "@/components/auth/auth-legal-links";
 
 // `useSearchParams` opts the component out of static prerendering
 // unless wrapped in Suspense — same pattern as /login.
@@ -270,6 +271,7 @@ function SignupPageInner() {
               Sign in
             </Link>
           </p>
+          <AuthLegalLinks />
         </CardContent>
       </Card>
     </div>

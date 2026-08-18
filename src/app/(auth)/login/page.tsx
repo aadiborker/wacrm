@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { MessageSquare, UsersRound } from "lucide-react";
+import { AuthLegalLinks } from "@/components/auth/auth-legal-links";
 
 // `useSearchParams` opts the component out of static prerendering
 // unless it sits under a Suspense boundary. We split the form into
@@ -162,6 +163,7 @@ function LoginPageInner() {
               {t('createAccount')}
             </Link>
           </p>
+          <AuthLegalLinks />
         </CardContent>
       </Card>
     </div>

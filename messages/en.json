@@ -15,6 +15,9 @@
     "noAccount": "Don't have an account?",
     "createAccount": "Create account"
   },
+  "Legal": {
+    "privacyPolicy": "Privacy policy"
+  },
   "Sidebar": {
     "title": "ReplyFlow",
     "dashboard": "Dashboard",
@@ -40,6 +43,7 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Profile",
     "menuSettings": "Settings",
+    "menuPrivacy": "Privacy policy",
     "menuSignOut": "Sign out"
   },
   "Header": {
@@ -58,6 +62,7 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Profile",
     "menuSettings": "Settings",
+    "menuPrivacy": "Privacy policy",
     "menuSignOut": "Sign out"
   },
   "ModeToggle": {
@@ -689,8 +694,11 @@
       "createdAt": "Created {date}",
       "scheduledAt": "Scheduled for {date}",
       "retryFailed": "Retry failed",
+      "retryFailedAll": "Retry all failed ({count})",
+      "retryFailedFiltered": "Retry selected ({count})",
       "retrying": "Retrying…",
-      "retryFailedHint": "Re-send the template to contacts whose last attempt failed.",
+      "retryFailedHint": "Re-send the template to all contacts whose last attempt failed.",
+      "retryFailedFilteredHint": "Re-send only to the {count} failed contacts matching {code}. Select a reason below first.",
       "retryUndelivered": "Retry undelivered ({count})",
       "retryingUndelivered": "Retrying undelivered…",
       "retryUndeliveredHint": "Re-send to contacts still at Sent with no delivery after {hours}h.",
@@ -729,6 +737,23 @@
         "read": "Read",
         "replied": "Replied",
         "failed": "Failed"
+      },
+      "failedReasons": {
+        "title": "Why deliveries failed",
+        "subtitle": "{count} failed deliveries — click a reason to filter the list below",
+        "clearFilter": "Show all recipients",
+        "otherCode": "Other",
+        "unknownCode": "Other error",
+        "unknownTip": "Check the Error column in the recipient list for details.",
+        "count": "{count} ({pct}%)",
+        "other": "Other / no Meta code",
+        "other_tip": "Send-time or internal errors without a Meta #code in the message.",
+        "code_131026": "Message undeliverable",
+        "code_131026_tip": "Number may be wrong, not on WhatsApp, or unreachable. Fix the phone in Contacts (use +91 and 10 digits).",
+        "code_131049": "Healthy ecosystem engagement",
+        "code_131049_tip": "Meta blocked this promo — often cold lists or low engagement. Send only to opted-in contacts; avoid retrying the same people immediately.",
+        "code_130472": "WhatsApp experiment",
+        "code_130472_tip": "Meta test group — rare and not fixable. You can retry later or ignore."
       },
       "toastFailedDelete": "Failed to delete: {error}",
       "toastDeleted": "Broadcast deleted"
