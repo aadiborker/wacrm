@@ -6,19 +6,29 @@ import {
   executeBroadcastSend,
   finalizeBroadcastStatus,
 } from '@/lib/broadcasts/execute';
+import { recipientMatchesErrorCode } from '@/lib/broadcasts/error-summary';
 
 /**
  * POST /api/broadcasts/[id]/retry-failed
  *
  * Re-sends the template to recipients whose last attempt failed.
+ * Optional body: `{ "errorCode": "131026" }` retries only that Meta reason.
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id: broadcastId } = await params;
     const supabase = await createClient();
+
+    const body = (await request.json().catch(() => null)) as {
+      errorCode?: string;
+    } | null;
+    const errorCode =
+      typeof body?.errorCode === 'string' && body.errorCode.trim()
+        ? body.errorCode.trim()
+        : undefined;
 
     const {
       data: { user },
@@ -66,15 +76,42 @@ export async function POST(
       );
     }
 
-    const { count: failedCount } = await supabase
+    const { data: failedRows, error: failedErr } = await supabase
       .from('broadcast_recipients')
-      .select('id', { count: 'exact', head: true })
+      .select('id, error_message')
       .eq('broadcast_id', broadcastId)
       .eq('status', 'failed');
 
-    if (!failedCount || failedCount === 0) {
+    if (failedErr) {
       return NextResponse.json(
-        { error: 'No failed recipients to retry' },
+        { error: 'Failed to load failed recipients' },
+        { status: 500 },
+      );
+    }
+
+    let recipientIds = (failedRows ?? []).map((r) => r.id as string);
+
+    if (errorCode) {
+      recipientIds = (failedRows ?? [])
+        .filter((r) =>
+          recipientMatchesErrorCode(
+            {
+              status: 'failed',
+              error_message: r.error_message as string | null,
+            },
+            errorCode,
+          ),
+        )
+        .map((r) => r.id as string);
+    }
+
+    if (recipientIds.length === 0) {
+      return NextResponse.json(
+        {
+          error: errorCode
+            ? 'No failed recipients match that error code'
+            : 'No failed recipients to retry',
+        },
         { status: 400 },
       );
     }
@@ -87,7 +124,7 @@ export async function POST(
       .eq('id', broadcastId);
 
     const result = await executeBroadcastSend(admin, broadcastId, {
-      onlyFailed: true,
+      recipientIds,
     });
 
     await finalizeBroadcastStatus(admin, broadcastId);
@@ -97,6 +134,7 @@ export async function POST(
       retried: result.total,
       sent: result.sent,
       failed: result.failed,
+      errorCode: errorCode ?? null,
     });
   } catch (err) {
     console.error('[broadcasts/retry-failed]', err);

@@ -44,6 +44,16 @@ import {
   DEFAULT_UNDELIVERED_RETRY_HOURS,
   undeliveredSentBeforeIso,
 } from '@/lib/broadcasts/undelivered';
+import {
+  recipientMatchesErrorCode,
+  summarizeBroadcastErrors,
+} from '@/lib/broadcasts/error-summary';
+import {
+  recipientMatchesTappedButton,
+  summarizeBroadcastButtonTaps,
+} from '@/lib/broadcasts/button-taps';
+import { FailedReasonSummary } from '@/components/broadcasts/failed-reason-summary';
+import { ButtonTapSummary } from '@/components/broadcasts/button-tap-summary';
 
 interface StatCardProps {
   label: string;
@@ -174,6 +184,8 @@ export default function BroadcastDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [retryingUndelivered, setRetryingUndelivered] = useState(false);
+  const [errorCodeFilter, setErrorCodeFilter] = useState<string | null>(null);
+  const [buttonFilter, setButtonFilter] = useState<string | null>(null);
 
   async function fetchData() {
     try {
@@ -226,13 +238,47 @@ export default function BroadcastDetailPage() {
     [recipients],
   );
 
-  const filteredRecipients = useMemo(() => {
-    if (statusFilter === 'all') return recipients;
-    if (statusFilter === 'undelivered') {
-      return recipients.filter((r) => isStaleUndelivered(r));
+  const failedErrorSummary = useMemo(
+    () => summarizeBroadcastErrors(recipients),
+    [recipients],
+  );
+
+  const buttonTapSummary = useMemo(
+    () => summarizeBroadcastButtonTaps(recipients),
+    [recipients],
+  );
+
+  const buttonTapTotal = useMemo(
+    () => buttonTapSummary.reduce((sum, row) => sum + row.count, 0),
+    [buttonTapSummary],
+  );
+
+  const retryFailedCount = useMemo(() => {
+    if (errorCodeFilter) {
+      return (
+        failedErrorSummary.find((r) => r.code === errorCodeFilter)?.count ?? 0
+      );
     }
-    return recipients.filter((r) => r.status === statusFilter);
-  }, [recipients, statusFilter]);
+    return broadcast?.failed_count ?? 0;
+  }, [errorCodeFilter, failedErrorSummary, broadcast?.failed_count]);
+
+  const filteredRecipients = useMemo(() => {
+    let list = recipients;
+    if (statusFilter === 'all') {
+      list = recipients;
+    } else if (statusFilter === 'undelivered') {
+      list = recipients.filter((r) => isStaleUndelivered(r));
+    } else {
+      list = recipients.filter((r) => r.status === statusFilter);
+    }
+    if (errorCodeFilter) {
+      list = list.filter((r) => recipientMatchesErrorCode(r, errorCodeFilter));
+    }
+    if (buttonFilter) {
+      list = list.filter((r) => recipientMatchesTappedButton(r, buttonFilter));
+    }
+    return list;
+  }, [recipients, statusFilter, errorCodeFilter, buttonFilter]);
 
   function handleExport() {
     if (!broadcast) return;
@@ -243,6 +289,7 @@ export default function BroadcastDetailPage() {
       t('table.sent'),
       t('table.delivered'),
       t('table.read'),
+      t('table.button'),
       t('table.error'),
     ];
     const rows = recipients.map((r) => [
@@ -252,6 +299,7 @@ export default function BroadcastDetailPage() {
       r.sent_at ?? '',
       r.delivered_at ?? '',
       r.read_at ?? '',
+      r.tapped_button ?? '',
       r.error_message ?? '',
     ]);
     const csv = toCsv([header, ...rows]);
@@ -280,11 +328,15 @@ export default function BroadcastDetailPage() {
   }
 
   async function handleRetryFailed() {
-    if (!broadcast || broadcast.failed_count === 0) return;
+    if (!broadcast || retryFailedCount === 0) return;
     setRetrying(true);
     try {
       const res = await fetch(`/api/broadcasts/${broadcastId}/retry-failed`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          errorCodeFilter ? { errorCode: errorCodeFilter } : {},
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -417,9 +469,19 @@ export default function BroadcastDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={retrying}
+                disabled={retrying || retryFailedCount === 0}
                 onClick={() => void handleRetryFailed()}
-                title={t('retryFailedHint')}
+                title={
+                  errorCodeFilter
+                    ? t('retryFailedFilteredHint', {
+                        count: retryFailedCount,
+                        code:
+                          errorCodeFilter === 'other'
+                            ? t('failedReasons.otherCode')
+                            : `#${errorCodeFilter}`,
+                      })
+                    : t('retryFailedHint')
+                }
                 className="border-border text-muted-foreground"
               >
                 {retrying ? (
@@ -427,7 +489,11 @@ export default function BroadcastDetailPage() {
                 ) : (
                   <RotateCcw className="h-3.5 w-3.5" />
                 )}
-                {retrying ? t('retrying') : t('retryFailed')}
+                {retrying
+                  ? t('retrying')
+                  : errorCodeFilter
+                    ? t('retryFailedFiltered', { count: retryFailedCount })
+                    : t('retryFailedAll', { count: retryFailedCount })}
               </Button>
             )}
           {undeliveredCount > 0 &&
@@ -545,13 +611,49 @@ export default function BroadcastDetailPage() {
         />
       </div>
 
+      {broadcast.failed_count > 0 && failedErrorSummary.length > 0 && (
+        <FailedReasonSummary
+          rows={failedErrorSummary}
+          failedTotal={broadcast.failed_count}
+          activeCode={errorCodeFilter}
+          onSelectCode={(code) => {
+            setStatusFilter('failed');
+            setErrorCodeFilter(code);
+            document
+              .getElementById('broadcast-recipients-table')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+          onClearFilter={() => {
+            setErrorCodeFilter(null);
+            setStatusFilter('all');
+          }}
+        />
+      )}
+
+      <ButtonTapSummary
+        rows={buttonTapSummary}
+        tappedTotal={buttonTapTotal}
+        recipientTotal={recipients.length}
+        activeButton={buttonFilter}
+        onSelectButton={(button) => {
+          setButtonFilter(button);
+          document
+            .getElementById('broadcast-recipients-table')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
+        onClearFilter={() => setButtonFilter(null)}
+      />
+
       <FunnelChart steps={funnelSteps} />
 
       {/* Recipients Table */}
-      <div className="rounded-xl border border-border bg-card">
+      <div
+        id="broadcast-recipients-table"
+        className="rounded-xl border border-border bg-card"
+      >
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
           <h2 className="text-sm font-medium text-foreground">
-            {statusFilter !== 'all'
+            {statusFilter !== 'all' || errorCodeFilter || buttonFilter
               ? t('recipientsHeader', { filtered: filteredRecipients.length, total: recipients.length })
               : t('recipientsHeaderAll', { total: recipients.length })}
           </h2>
@@ -576,7 +678,10 @@ export default function BroadcastDetailPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent className="border-border bg-popover">
                 <DropdownMenuItem
-                  onClick={() => setStatusFilter('all')}
+                  onClick={() => {
+                    setErrorCodeFilter(null);
+                    setStatusFilter('all');
+                  }}
                   className={
                     statusFilter === 'all' ? 'text-primary' : 'text-popover-foreground'
                   }
@@ -586,7 +691,10 @@ export default function BroadcastDetailPage() {
                 {RECIPIENT_STATUSES.map((s) => (
                   <DropdownMenuItem
                     key={s}
-                    onClick={() => setStatusFilter(s)}
+                    onClick={() => {
+                      setErrorCodeFilter(null);
+                      setStatusFilter(s);
+                    }}
                     className={
                       statusFilter === s
                         ? 'text-primary'
@@ -597,7 +705,10 @@ export default function BroadcastDetailPage() {
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuItem
-                  onClick={() => setStatusFilter('undelivered')}
+                  onClick={() => {
+                    setErrorCodeFilter(null);
+                    setStatusFilter('undelivered');
+                  }}
                   className={
                     statusFilter === 'undelivered'
                       ? 'text-primary'
@@ -641,6 +752,7 @@ export default function BroadcastDetailPage() {
                   <TableHead className="text-muted-foreground">{t('table.sent')}</TableHead>
                   <TableHead className="text-muted-foreground">{t('table.delivered')}</TableHead>
                   <TableHead className="text-muted-foreground">{t('table.read')}</TableHead>
+                  <TableHead className="text-muted-foreground">{t('table.button')}</TableHead>
                   <TableHead className="text-muted-foreground">{t('table.error')}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -675,6 +787,11 @@ export default function BroadcastDetailPage() {
                       <TableCell className="text-muted-foreground">
                         {recipient.read_at
                           ? new Date(recipient.read_at).toLocaleString()
+                          : '-'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {recipient.tapped_button?.trim()
+                          ? recipient.tapped_button
                           : '-'}
                       </TableCell>
                       <TableCell className="max-w-xs truncate text-xs text-red-400">

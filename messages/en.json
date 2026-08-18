@@ -728,6 +728,7 @@
         "sent": "Sent",
         "delivered": "Delivered",
         "read": "Read",
+        "button": "Button",
         "error": "Error"
       },
       "stats": {
@@ -754,6 +755,14 @@
         "code_131049_tip": "Meta blocked this promo — often cold lists or low engagement. Send only to opted-in contacts; avoid retrying the same people immediately.",
         "code_130472": "WhatsApp experiment",
         "code_130472_tip": "Meta test group — rare and not fixable. You can retry later or ignore."
+      },
+      "buttonTaps": {
+        "title": "Button taps",
+        "subtitle": "{count} of {total} recipients tapped a quick-reply button — click to filter",
+        "empty": "No quick-reply taps yet",
+        "emptyHint": "WhatsApp only reports Quick Reply taps (e.g. “I'm interested”). Call us and website buttons do not send a tap event — add a Quick Reply on the template to track this.",
+        "clearFilter": "Show all recipients",
+        "count": "{count} ({pct}%)"
       },
       "toastFailedDelete": "Failed to delete: {error}",
       "toastDeleted": "Broadcast deleted"
@@ -1620,7 +1629,10 @@
       
       "buttons": "Buttons (optional)",
       "addButton": "Add Button",
-      "buttonsLimit": "Up to {max} buttons. QUICK_REPLY buttons must come before URL / phone / copy-code buttons.",
+      "addLeadButtons": "I'm Interested + Call Us",
+      "leadQrLabel": "I'm Interested",
+      "leadPhoneLabel": "Call Us",
+      "buttonsLimit": "Up to {max} buttons. WhatsApp shows I'm Interested first, then Call Us. Quick replies always sit above phone / URL buttons.",
       "btnQuickReply": "Quick Reply",
       "btnUrl": "URL",
       "btnPhone": "Phone",

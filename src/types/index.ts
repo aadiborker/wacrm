@@ -426,6 +426,12 @@ export interface BroadcastRecipient {
   delivered_at?: string;
   read_at?: string;
   replied_at?: string;
+  /**
+   * Template QUICK_REPLY payload/label the contact tapped, if any.
+   * Call / URL buttons never populate this (Meta sends no webhook).
+   * Added in migration 044.
+   */
+  tapped_button?: string | null;
   error_message?: string;
   /**
    * Meta's message id, persisted when the broadcast send succeeds so
