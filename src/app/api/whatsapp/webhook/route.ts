@@ -496,30 +496,46 @@ async function handleStatusUpdate(status: {
  * broadcast_recipients row, flip it to `replied` so the reply count
  * advances on the parent broadcast.
  *
+ * When the inbound is a template QUICK_REPLY tap, `tappedButton` is
+ * the payload/label so the broadcast page can count button
+ * interactions. Call / URL buttons never reach this function.
+ *
  * Runs on a best-effort basis — failures here must not break the
  * main inbound-message flow, so errors are swallowed with a log.
  */
-async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
+async function flagBroadcastReplyIfAny(
+  accountId: string,
+  contactId: string,
+  tappedButton?: string | null,
+) {
   try {
-    // Most recent outbound broadcast in this account that hasn't
-    // been replied to yet. Account-scoped so a shared inbox reply
-    // marks the broadcast as replied regardless of which teammate
-    // sent it.
+    // Most recent outbound broadcast in this account. Include
+    // `replied` so a later button tap can still stamp tapped_button
+    // after a free-text reply already flipped the status.
     const { data: recs, error } = await supabaseAdmin()
       .from('broadcast_recipients')
-      .select('id, status, broadcast_id, broadcasts!inner(account_id)')
+      .select('id, status, replied_at, broadcast_id, broadcasts!inner(account_id)')
       .eq('contact_id', contactId)
       .eq('broadcasts.account_id', accountId)
-      .in('status', ['sent', 'delivered', 'read'])
+      .in('status', ['sent', 'delivered', 'read', 'replied'])
       .order('created_at', { ascending: false })
       .limit(1)
 
     if (error || !recs || recs.length === 0) return
 
     const row = recs[0]
+    const patch: Record<string, string> = { status: 'replied' }
+    if (!row.replied_at) {
+      patch.replied_at = new Date().toISOString()
+    }
+    const button = tappedButton?.trim()
+    if (button) {
+      patch.tapped_button = button
+    }
+
     const { error: updErr } = await supabaseAdmin()
       .from('broadcast_recipients')
-      .update({ status: 'replied', replied_at: new Date().toISOString() })
+      .update(patch)
       .eq('id', row.id)
 
     if (updErr) {
@@ -730,29 +746,54 @@ async function processMessage(
   // ONLY on a genuine first insert — an empty result means this delivery
   // was a replay. This is the single idempotency boundary that must sit
   // BEFORE the unread bump and all downstream fan-out below (issue #367).
-  const { data: insertedRows, error: msgError } = await supabaseAdmin()
+  const inboundRow = {
+    conversation_id: conversation.id,
+    sender_type: 'customer',
+    content_type: contentType,
+    content_text: contentText,
+    media_url: mediaUrl,
+    message_id: message.id,
+    status: 'delivered',
+    created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+    reply_to_message_id: replyToInternalId,
+    // Only populated for content_type='interactive'. Migration 010 added
+    // the column; null for every other content_type so existing inserts
+    // behave identically.
+    interactive_reply_id: interactiveReplyId,
+  }
+
+  let { data: insertedRows, error: msgError } = await supabaseAdmin()
     .from('messages')
-    .upsert(
-      {
-        conversation_id: conversation.id,
-        sender_type: 'customer',
-        content_type: contentType,
-        content_text: contentText,
-        media_url: mediaUrl,
-        message_id: message.id,
-        status: 'delivered',
-        created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-        reply_to_message_id: replyToInternalId,
-        // Only populated for content_type='interactive'. Migration 010 added
-        // the column; null for every other content_type so existing inserts
-        // behave identically.
-        interactive_reply_id: interactiveReplyId,
-      },
-      { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
-    )
+    .upsert(inboundRow, {
+      onConflict: 'conversation_id,message_id',
+      ignoreDuplicates: true,
+    })
     .select('id')
 
+  // 42P10: no UNIQUE constraint for ON CONFLICT — migration 037 was
+  // skipped (duplicate 037 filename) or PostgREST only infers table
+  // constraints. Fall back to a plain insert so inbound is not dropped.
+  if (msgError?.code === '42P10') {
+    console.warn(
+      '[webhook] messages upsert missing unique constraint; falling back to insert. Apply supabase/migrations/043_messages_inbound_upsert_constraint.sql',
+    )
+    const inserted = await supabaseAdmin()
+      .from('messages')
+      .insert(inboundRow)
+      .select('id')
+    insertedRows = inserted.data
+    msgError = inserted.error
+  }
+
   if (msgError) {
+    // Race with a concurrent delivery of the same Meta message id.
+    if (msgError.code === '23505') {
+      console.info(
+        '[webhook] duplicate inbound message ignored (unique violation):',
+        message.id,
+      )
+      return
+    }
     console.error('Error inserting message:', msgError)
     return
   }
@@ -797,7 +838,11 @@ async function processMessage(
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
-  await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+  await flagBroadcastReplyIfAny(
+    accountId,
+    contactRecord.id,
+    interactiveReplyId,
+  )
 
   // ============================================================
   // Flow runner dispatch.
