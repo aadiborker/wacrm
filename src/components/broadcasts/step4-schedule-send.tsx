@@ -23,6 +23,12 @@ interface AudienceConfig {
   type: string;
   tagIds?: string[];
   csvContacts?: { phone: string; name?: string }[];
+  contactIds?: string[];
+  customField?: {
+    fieldId: string;
+    operator: 'is' | 'is_not' | 'contains';
+    value: string;
+  };
   recipientLimit?: number;
 }
 
@@ -82,6 +88,25 @@ export function Step4ScheduleSend({
           raw = uniqueIds.size;
         } else if (audience.type === 'csv' && audience.csvContacts) {
           raw = audience.csvContacts.length;
+        } else if (audience.type === 'contacts' && audience.contactIds) {
+          raw = audience.contactIds.length;
+        } else if (
+          audience.type === 'custom_field' &&
+          audience.customField?.fieldId &&
+          audience.customField.value
+        ) {
+          // Mirrors resolveCustomFieldAudience — without this branch a
+          // custom-field broadcast always reported a reach of 0.
+          const { fieldId, operator, value } = audience.customField;
+          let q = supabase
+            .from('contact_custom_values')
+            .select('contact_id')
+            .eq('custom_field_id', fieldId);
+          if (operator === 'is') q = q.eq('value', value);
+          else if (operator === 'is_not') q = q.neq('value', value);
+          else q = q.ilike('value', `%${value}%`);
+          const { data } = await q;
+          raw = new Set((data ?? []).map((r) => r.contact_id)).size;
         }
 
         setEstimatedReach(
@@ -102,7 +127,9 @@ export function Step4ScheduleSend({
         ? t('scheduleSend.audienceTags')
         : audience.type === 'csv'
           ? t('scheduleSend.audienceCsv')
-          : t('scheduleSend.audienceField');
+          : audience.type === 'contacts'
+            ? t('scheduleSend.audienceContacts')
+            : t('scheduleSend.audienceField');
 
   const confirmAction = () => {
     setShowConfirm(false);

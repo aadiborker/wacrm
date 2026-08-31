@@ -887,6 +887,7 @@
         "audienceTags": "Filtered by tags",
         "audienceField": "Filtered by custom field",
         "audienceCsv": "CSV upload",
+        "audienceContacts": "Hand-picked contacts",
         "variables": "Variables:",
         "variablesMapped": "{count} mapped",
         "saveDraft": "Save as Draft",
