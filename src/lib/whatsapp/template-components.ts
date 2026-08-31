@@ -11,6 +11,7 @@
  */
 
 import type { TemplatePayload } from './template-validators';
+import { orderTemplateButtons } from './template-validators';
 import type { TemplateButton } from '@/types';
 import { normalizeMetaTemplateLanguage } from './template-language';
 
@@ -111,7 +112,7 @@ function buildButtonsComponent(payload: TemplatePayload): MetaComponent | null {
   if (!payload.buttons || payload.buttons.length === 0) return null;
   return {
     type: 'BUTTONS',
-    buttons: payload.buttons.map(buildButtonPayload),
+    buttons: orderTemplateButtons(payload.buttons).map(buildButtonPayload),
   };
 }
 

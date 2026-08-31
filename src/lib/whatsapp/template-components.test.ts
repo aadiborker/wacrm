@@ -89,6 +89,21 @@ describe('buildMetaTemplatePayload', () => {
     expect(withoutFooter.components.some((c) => c.type === 'FOOTER')).toBe(false);
   });
 
+    it('reorders Call Us after I\'m Interested for Meta', () => {
+      const payload = buildMetaTemplatePayload({
+        ...base,
+        buttons: [
+          { type: 'PHONE_NUMBER', text: 'Call Us', phone_number: '+15551234567' },
+          { type: 'QUICK_REPLY', text: "I'm Interested" },
+        ],
+      });
+      const buttons = payload.components.find((c) => c.type === 'BUTTONS');
+      expect(buttons?.buttons?.map((b) => b.text)).toEqual([
+        "I'm Interested",
+        'Call Us',
+      ]);
+    });
+
   it('emits the buttons component with correct per-type fields', () => {
     const payload = buildMetaTemplatePayload({
       ...base,

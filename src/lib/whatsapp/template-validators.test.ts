@@ -9,6 +9,7 @@ import {
   validateSampleValues,
   validateTemplateName,
   validateTemplatePayload,
+  orderTemplateButtons,
   type TemplatePayload,
 } from './template-validators';
 
@@ -217,6 +218,17 @@ describe('validateButtons', () => {
     expect(() =>
       validateButtons([{ type: 'COPY_CODE', text: 'Copy', example: '' }]),
     ).toThrow(/missing example/);
+  });
+});
+
+describe('orderTemplateButtons', () => {
+  it("puts I'm Interested (quick reply) before Call Us (phone)", () => {
+    expect(
+      orderTemplateButtons([
+        { type: 'PHONE_NUMBER', text: 'Call Us', phone_number: '+9198' },
+        { type: 'QUICK_REPLY', text: "I'm Interested" },
+      ]).map((b) => b.text),
+    ).toEqual(["I'm Interested", 'Call Us']);
   });
 });
 

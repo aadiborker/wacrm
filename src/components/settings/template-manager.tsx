@@ -53,6 +53,7 @@ import { templateStatusConfig } from '@/lib/template-status';
 import { formatTemplateTime12h, resolveTemplateSentIso } from '@/lib/template-format';
 import {
   extractVariableIndices,
+  orderTemplateButtons,
   TEMPLATE_LIMITS,
 } from '@/lib/whatsapp/template-validators';
 import { TEMPLATE_SUBMIT_PROCESSING } from '@/lib/whatsapp/template-submit-processing';
@@ -148,11 +149,11 @@ async function readApiJson(res: Response): Promise<Record<string, unknown>> {
 function emptyButton(type: TemplateButton['type']): TemplateButton {
   switch (type) {
     case 'QUICK_REPLY':
-      return { type: 'QUICK_REPLY', text: '' };
+      return { type: 'QUICK_REPLY', text: "I'm Interested" };
     case 'URL':
       return { type: 'URL', text: '', url: '' };
     case 'PHONE_NUMBER':
-      return { type: 'PHONE_NUMBER', text: '', phone_number: '' };
+      return { type: 'PHONE_NUMBER', text: 'Call Us', phone_number: '' };
     case 'COPY_CODE':
       return { type: 'COPY_CODE', text: '', example: '' };
   }
@@ -532,14 +533,16 @@ export function TemplateManager() {
     setForm((prev) => {
       const next = [...prev.buttons];
       next[index] = emptyButton(type);
-      return { ...prev, buttons: next };
+      return { ...prev, buttons: orderTemplateButtons(next) };
     });
   }
 
   function removeButton(index: number) {
     setForm((prev) => ({
       ...prev,
-      buttons: prev.buttons.filter((_, i) => i !== index),
+      buttons: orderTemplateButtons(
+        prev.buttons.filter((_, i) => i !== index),
+      ),
     }));
   }
 
@@ -547,8 +550,50 @@ export function TemplateManager() {
     if (form.buttons.length >= TEMPLATE_LIMITS.maxButtonsTotal) return;
     setForm((prev) => ({
       ...prev,
-      buttons: [...prev.buttons, emptyButton('QUICK_REPLY')],
+      buttons: orderTemplateButtons([
+        ...prev.buttons,
+        emptyButton('QUICK_REPLY'),
+      ]),
     }));
+  }
+
+  function addLeadCaptureButtons() {
+    setForm((prev) => {
+      const existingQr = prev.buttons.find((b) => b.type === 'QUICK_REPLY');
+      const existingPhone = prev.buttons.find((b) => b.type === 'PHONE_NUMBER');
+      const others = prev.buttons.filter(
+        (b) => b.type !== 'QUICK_REPLY' && b.type !== 'PHONE_NUMBER',
+      );
+      const adding =
+        (existingQr ? 0 : 1) + (existingPhone ? 0 : 1);
+      if (others.length + 2 > TEMPLATE_LIMITS.maxButtonsTotal && adding > 0) {
+        toast.error(t('buttonsLimit', { max: TEMPLATE_LIMITS.maxButtonsTotal }));
+        return {
+          ...prev,
+          buttons: orderTemplateButtons(prev.buttons),
+        };
+      }
+      const qr: TemplateButton = existingQr
+        ? {
+            ...existingQr,
+            text: existingQr.text.trim() || t('leadQrLabel'),
+          }
+        : { type: 'QUICK_REPLY', text: t('leadQrLabel') };
+      const phone: TemplateButton = existingPhone
+        ? {
+            ...existingPhone,
+            text: existingPhone.text.trim() || t('leadPhoneLabel'),
+          }
+        : {
+            type: 'PHONE_NUMBER',
+            text: t('leadPhoneLabel'),
+            phone_number: '',
+          };
+      return {
+        ...prev,
+        buttons: orderTemplateButtons([qr, phone, ...others]),
+      };
+    });
   }
 
   if (loading) {
@@ -1131,17 +1176,28 @@ export function TemplateManager() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-muted-foreground">{t('buttons')}</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addButton}
-                  disabled={form.buttons.length >= TEMPLATE_LIMITS.maxButtonsTotal}
-                  className="border-border bg-transparent text-muted-foreground hover:bg-muted h-7 text-xs"
-                >
-                  <Plus className="size-3" />
-                  {t('addButton')}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addLeadCaptureButtons}
+                    className="border-border bg-transparent text-muted-foreground hover:bg-muted h-7 text-xs"
+                  >
+                    {t('addLeadButtons')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addButton}
+                    disabled={form.buttons.length >= TEMPLATE_LIMITS.maxButtonsTotal}
+                    className="border-border bg-transparent text-muted-foreground hover:bg-muted h-7 text-xs"
+                  >
+                    <Plus className="size-3" />
+                    {t('addButton')}
+                  </Button>
+                </div>
               </div>
               {form.buttons.length === 0 ? (
                 <p className="text-[11px] text-muted-foreground">
@@ -1258,6 +1314,9 @@ export function TemplateManager() {
                       )}
                     </div>
                   ))}
+                  <p className="text-[11px] text-muted-foreground">
+                    {t('buttonsLimit', { max: TEMPLATE_LIMITS.maxButtonsTotal })}
+                  </p>
                 </div>
               )}
             </div>

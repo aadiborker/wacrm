@@ -179,6 +179,19 @@ function countButtonsByType(
   return counts;
 }
 
+/**
+ * Meta requires all QUICK_REPLY buttons before CTA buttons
+ * (PHONE_NUMBER / URL / COPY_CODE). Lead-capture templates should
+ * show "I'm Interested" first, then "Call Us".
+ */
+export function orderTemplateButtons(
+  buttons: TemplateButton[],
+): TemplateButton[] {
+  const quickReply = buttons.filter((b) => b.type === 'QUICK_REPLY');
+  const cta = buttons.filter((b) => b.type !== 'QUICK_REPLY');
+  return [...quickReply, ...cta];
+}
+
 export function validateButtons(buttons: TemplateButton[] | undefined): void {
   if (!buttons || buttons.length === 0) return;
   if (buttons.length > TEMPLATE_LIMITS.maxButtonsTotal) {
@@ -329,6 +342,9 @@ export function validateTemplatePayload(payload: TemplatePayload): {
   const bodyVars = validateBody(payload.body_text);
   validateFooter(payload.footer_text);
   const headerResult = validateHeader(payload);
+  if (payload.buttons?.length) {
+    payload.buttons = orderTemplateButtons(payload.buttons);
+  }
   validateButtons(payload.buttons);
   validateSampleValues(payload, bodyVars.length, headerResult.variableCount);
   return {
