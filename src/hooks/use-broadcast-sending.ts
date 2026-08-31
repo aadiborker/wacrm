@@ -24,10 +24,12 @@ export interface CustomFieldFilter {
 }
 
 export interface AudienceConfig {
-  type: 'all' | 'tags' | 'custom_field' | 'csv';
+  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts';
   tagIds?: string[];
   customField?: CustomFieldFilter;
   csvContacts?: { phone: string; name?: string }[];
+  /** Hand-picked contacts.id values for the `contacts` audience type. */
+  contactIds?: string[];
   /** Contacts carrying any of these tags are subtracted from the result. */
   excludeTagIds?: string[];
   /** Max recipients after filters — oldest contacts first (testing / staged sends). */
@@ -80,6 +82,7 @@ function buildAudienceFilter(
     tagIds: audience.tagIds,
     customField: audience.customField,
     csvContacts: audience.csvContacts,
+    contactIds: audience.contactIds,
     excludeTagIds: audience.excludeTagIds,
     recipientLimit: audience.recipientLimit,
     ...(headerMediaUrl?.trim() ? { headerMediaUrl: headerMediaUrl.trim() } : {}),
@@ -114,6 +117,34 @@ async function fetchAllContacts(
     offset += CONTACT_FETCH_PAGE;
   }
   return all;
+}
+
+/**
+ * Resolve hand-picked contact ids to full rows, preserving the order the
+ * user selected them. Chunked because `in.(…)` goes into the query
+ * string — a few hundred UUIDs is enough to blow past proxy URL limits.
+ */
+async function fetchContactsByIds(
+  supabase: ReturnType<typeof createClient>,
+  ids: string[],
+): Promise<Contact[]> {
+  const ID_CHUNK = 100;
+  const byId = new Map<string, Contact>();
+
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const chunk = ids.slice(i, i + ID_CHUNK);
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('*')
+      .in('id', chunk);
+    if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
+    for (const c of (data ?? []) as Contact[]) byId.set(c.id, c);
+  }
+
+  // Silently drops ids deleted between selection and send.
+  return ids
+    .map((id) => byId.get(id))
+    .filter((c): c is Contact => Boolean(c));
 }
 
 export function useBroadcastSending(): UseBroadcastSendingReturn {
@@ -168,6 +199,12 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       }
     } else if (audience.type === 'custom_field' && audience.customField) {
       contacts = await resolveCustomFieldAudience(supabase, audience.customField);
+    } else if (
+      audience.type === 'contacts' &&
+      audience.contactIds &&
+      audience.contactIds.length > 0
+    ) {
+      contacts = await fetchContactsByIds(supabase, audience.contactIds);
     } else if (audience.type === 'csv' && audience.csvContacts) {
       contacts = await upsertCsvContacts(supabase, audience.csvContacts);
     }

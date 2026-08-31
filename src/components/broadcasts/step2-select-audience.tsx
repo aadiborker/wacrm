@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { CustomField, Tag } from '@/types';
+import { Contact, CustomField, Tag } from '@/types';
 import { Button } from '@/components/ui/button';
 import {
   Users,
@@ -13,6 +13,9 @@ import {
   ArrowRight,
   ArrowLeft,
   X,
+  UserCheck,
+  Search,
+  Check,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
@@ -22,8 +25,13 @@ import {
   cappedAudienceCount,
 } from '@/lib/broadcasts/audience-limit';
 
-type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
+type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts';
 type CustomFieldOperator = 'is' | 'is_not' | 'contains';
+
+/** Rows shown per search in the contact picker. */
+const CONTACT_PICKER_PAGE = 50;
+/** Debounce for the picker's search box, in ms. */
+const CONTACT_SEARCH_DEBOUNCE_MS = 250;
 
 interface CustomFieldFilter {
   fieldId: string;
@@ -36,6 +44,7 @@ interface AudienceConfig {
   tagIds?: string[];
   customField?: CustomFieldFilter;
   csvContacts?: { phone: string; name?: string }[];
+  contactIds?: string[];
   excludeTagIds?: string[];
   recipientLimit?: number;
 }
@@ -74,6 +83,12 @@ export function Step2SelectAudience({
       icon: Users,
     },
     {
+      type: 'contacts',
+      label: t('selectAudience.method.contacts'),
+      description: t('selectAudience.contactsDesc'),
+      icon: UserCheck,
+    },
+    {
       type: 'tags',
       label: t('selectAudience.method.tags'),
       description: t('selectAudience.tagDesc'),
@@ -98,6 +113,14 @@ export function Step2SelectAudience({
   const [loadingFields, setLoadingFields] = useState(false);
   const [estimatedCount, setEstimatedCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
+  const [contactSearch, setContactSearch] = useState('');
+  const [contactResults, setContactResults] = useState<Contact[]>([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
+  // Keeps names/phones for picked contacts that the current search no
+  // longer returns, so the selected chips never degrade to bare UUIDs.
+  const [pickedContacts, setPickedContacts] = useState<Map<string, Contact>>(
+    new Map(),
+  );
 
   // Tags are used both by the primary "Filter by Tags" audience type
   // AND by the exclude-list below — so always load once on mount.
@@ -134,6 +157,73 @@ export function Step2SelectAudience({
     fetchFields();
   }, [audience.type]);
 
+  // Contact picker search — debounced so typing doesn't fire a query
+  // per keystroke. Empty search shows the newest contacts, matching the
+  // order of the Contacts page.
+  useEffect(() => {
+    if (audience.type !== 'contacts') return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setLoadingContacts(true);
+      try {
+        const supabase = createClient();
+        let query = supabase
+          .from('contacts')
+          .select('id, name, phone')
+          .order('created_at', { ascending: false })
+          .limit(CONTACT_PICKER_PAGE);
+        const term = contactSearch.trim();
+        if (term) {
+          // Escape PostgREST's or() delimiters so a comma or paren in
+          // the search box can't break out of the filter expression.
+          const safe = term.replace(/[,()]/g, ' ');
+          query = query.or(`name.ilike.%${safe}%,phone.ilike.%${safe}%`);
+        }
+        const { data } = await query;
+        if (!cancelled) setContactResults((data ?? []) as Contact[]);
+      } finally {
+        if (!cancelled) setLoadingContacts(false);
+      }
+    }, CONTACT_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [audience.type, contactSearch]);
+
+  // Hydrate labels for ids restored from wizard state (e.g. the user
+  // stepped forward then came back) that we've never seen a row for.
+  // `hydratedIds` records every id we've already queried — without it,
+  // an id that no longer exists in the DB never lands in
+  // `pickedContacts` and the effect refetches on every render.
+  const hydratedIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const missing = (audience.contactIds ?? []).filter(
+      (id) => !hydratedIds.current.has(id),
+    );
+    if (missing.length === 0) return;
+    for (const id of missing) hydratedIds.current.add(id);
+
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('contacts')
+        .select('id, name, phone')
+        .in('id', missing.slice(0, 100));
+      if (cancelled || !data) return;
+      setPickedContacts((prev) => {
+        const next = new Map(prev);
+        for (const c of data as Contact[]) next.set(c.id, c);
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [audience.contactIds]);
+
   const fetchEstimatedCount = useCallback(async () => {
     setLoadingCount(true);
     try {
@@ -169,6 +259,12 @@ export function Step2SelectAudience({
         else q = q.ilike('value', `%${value}%`);
         const { data } = await q;
         baseIds = new Set((data ?? []).map((r) => r.contact_id));
+      } else if (
+        audience.type === 'contacts' &&
+        audience.contactIds &&
+        audience.contactIds.length > 0
+      ) {
+        baseIds = new Set(audience.contactIds);
       } else if (
         audience.type === 'csv' &&
         audience.csvContacts &&
@@ -215,6 +311,7 @@ export function Step2SelectAudience({
     audience.tagIds,
     audience.customField,
     audience.csvContacts,
+    audience.contactIds,
     audience.excludeTagIds,
     audience.recipientLimit,
   ]);
@@ -229,6 +326,35 @@ export function Step2SelectAudience({
       ? current.filter((id) => id !== tagId)
       : [...current, tagId];
     onUpdate({ ...audience, tagIds: updated });
+  }
+
+  function toggleContact(contact: Contact) {
+    const current = audience.contactIds ?? [];
+    const isPicked = current.includes(contact.id);
+    onUpdate({
+      ...audience,
+      contactIds: isPicked
+        ? current.filter((id) => id !== contact.id)
+        : [...current, contact.id],
+    });
+    if (!isPicked) {
+      setPickedContacts((prev) => new Map(prev).set(contact.id, contact));
+    }
+  }
+
+  function selectAllResults() {
+    const current = new Set(audience.contactIds ?? []);
+    for (const c of contactResults) current.add(c.id);
+    onUpdate({ ...audience, contactIds: [...current] });
+    setPickedContacts((prev) => {
+      const next = new Map(prev);
+      for (const c of contactResults) next.set(c.id, c);
+      return next;
+    });
+  }
+
+  function contactLabel(contact: Contact) {
+    return contact.name?.trim() || contact.phone || '';
   }
 
   function toggleExcludeTag(tagId: string) {
@@ -272,6 +398,9 @@ export function Step2SelectAudience({
     (audience.type === 'custom_field' &&
       !!audience.customField?.fieldId &&
       audience.customField.value.length > 0) ||
+    (audience.type === 'contacts' &&
+      audience.contactIds &&
+      audience.contactIds.length > 0) ||
     (audience.type === 'csv' &&
       audience.csvContacts &&
       audience.csvContacts.length > 0);
@@ -305,6 +434,10 @@ export function Step2SelectAudience({
                       : undefined,
                   csvContacts:
                     option.type === 'csv' ? audience.csvContacts : undefined,
+                  contactIds:
+                    option.type === 'contacts'
+                      ? audience.contactIds
+                      : undefined,
                 })
               }
               className={`flex items-start gap-3 rounded-xl border p-4 text-left transition-all ${
@@ -332,6 +465,137 @@ export function Step2SelectAudience({
           );
         })}
       </div>
+
+      {audience.type === 'contacts' && (
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-foreground">
+              {t('selectAudience.selectContacts')}
+            </p>
+            <span className="text-xs text-muted-foreground">
+              {t('selectAudience.contactsSelected', {
+                count: audience.contactIds?.length ?? 0,
+              })}
+            </span>
+          </div>
+
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              value={contactSearch}
+              onChange={(e) => setContactSearch(e.target.value)}
+              placeholder={t('selectAudience.searchContacts')}
+              className="h-9 border-border bg-muted pl-8"
+            />
+          </div>
+
+          {(audience.contactIds?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {(audience.contactIds ?? []).map((id) => {
+                const contact = pickedContacts.get(id);
+                return (
+                  <button
+                    key={id}
+                    onClick={() =>
+                      onUpdate({
+                        ...audience,
+                        contactIds: (audience.contactIds ?? []).filter(
+                          (x) => x !== id,
+                        ),
+                      })
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-all hover:bg-primary/20"
+                  >
+                    {contact ? contactLabel(contact) : '…'}
+                    <X className="h-3 w-3" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-border">
+            {loadingContacts ? (
+              <div className="flex items-center gap-2 p-3">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-xs text-muted-foreground">
+                  {t('selectAudience.summaryCalculating')}
+                </span>
+              </div>
+            ) : contactResults.length === 0 ? (
+              <p className="p-3 text-xs text-muted-foreground">
+                {t('selectAudience.noContactsFound')}
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {contactResults.map((contact) => {
+                  const isPicked = audience.contactIds?.includes(contact.id);
+                  return (
+                    <li key={contact.id}>
+                      <button
+                        onClick={() => toggleContact(contact)}
+                        className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
+                          isPicked ? 'bg-primary/5' : 'hover:bg-muted/50'
+                        }`}
+                      >
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                            isPicked
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-border'
+                          }`}
+                        >
+                          {isPicked && <Check className="h-3 w-3" />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm text-foreground">
+                            {contact.name?.trim() || contact.phone}
+                          </span>
+                          {contact.name?.trim() && (
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {contact.phone}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-border text-muted-foreground"
+              disabled={contactResults.length === 0}
+              onClick={selectAllResults}
+            >
+              {t('selectAudience.selectAllResults')}
+            </Button>
+            {(audience.contactIds?.length ?? 0) > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={() => onUpdate({ ...audience, contactIds: [] })}
+              >
+                {t('selectAudience.clearSelection')}
+              </Button>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {t('selectAudience.contactsSearchHint', {
+                count: CONTACT_PICKER_PAGE,
+              })}
+            </p>
+          </div>
+        </div>
+      )}
 
       {audience.type === 'tags' && (
         <div className="rounded-xl border border-border bg-card/50 p-4">
