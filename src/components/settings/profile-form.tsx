@@ -116,25 +116,23 @@ export function ProfileForm() {
     try {
       let nextAvatarUrl: string | null = profile.avatar_url ?? null;
 
-      // Upload a newly-staged image, if any.
+      // Upload a newly-staged image, if any (S3 when configured, else
+      // Supabase Storage — same helper as inbox / flows).
       if (pendingAvatar) {
-        const ext =
-          pendingAvatar.name.split('.').pop()?.toLowerCase() || 'png';
-        const path = `${user.id}/avatar-${Date.now()}.${ext}`;
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(path, pendingAvatar, {
-            cacheControl: '3600',
-            upsert: true,
-            contentType: pendingAvatar.type,
-          });
-        if (uploadError) {
-          throw new Error(t('uploadFailed', { message: uploadError.message }));
+        try {
+          const { uploadAccountMedia } = await import(
+            '@/lib/storage/upload-media'
+          );
+          const { publicUrl } = await uploadAccountMedia(
+            'avatars',
+            pendingAvatar,
+          );
+          nextAvatarUrl = publicUrl;
+        } catch (uploadErr) {
+          const message =
+            uploadErr instanceof Error ? uploadErr.message : 'Upload failed';
+          throw new Error(t('uploadFailed', { message }));
         }
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from('avatars').getPublicUrl(path);
-        nextAvatarUrl = publicUrl;
       } else if (removeAvatar) {
         nextAvatarUrl = null;
       }

@@ -49,13 +49,13 @@ const SECURITY_HEADERS = [
       // https URLs paste-able from the UI), OG images, data URLs for
       // tiny inline assets.
       "img-src 'self' data: blob: https:",
-      // Outbound media previews (blob: from MediaRecorder + file picker)
-      // and Supabase public-bucket audio/video the inbox renders.
-      "media-src 'self' blob: https://*.supabase.co",
+      // Outbound media previews (blob: from MediaRecorder + file picker),
+      // Supabase public buckets, and S3/CloudFront media when configured.
+      "media-src 'self' blob: https://*.supabase.co https://*.amazonaws.com https://*.cloudfront.net",
       "font-src 'self' data:",
       // Supabase REST + realtime (WSS). All Meta API calls happen
       // server-side, so graph.facebook.com does not belong here.
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.amazonaws.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -71,7 +71,12 @@ const nextConfig: NextConfig = {
 
   // Keep PDF / DOCX parsers external so standalone tracing copies
   // real node_modules (incl. pdf.worker) instead of a broken bundle.
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "mammoth"],
+  serverExternalPackages: [
+    "pdf-parse",
+    "pdfjs-dist",
+    "mammoth",
+    "@aws-sdk/client-s3",
+  ],
 
   // Explicit includes for the knowledge-base upload route — the
   // file tracer sometimes misses nested pdf-parse worker assets.

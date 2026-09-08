@@ -1,17 +1,20 @@
 import { createClient } from "@/lib/supabase/client";
 
 /**
- * Shared media-upload helper for Supabase Storage buckets that use the
- * account-scoped path convention introduced in migration 020
- * (`flow-media`) and reused by migration 023 (`chat-media`):
+ * Shared media-upload helper for account-scoped media.
+ *
+ * When S3 is configured on the server (`S3_BUCKET` + AWS creds +
+ * `S3_PUBLIC_BASE_URL`), uploads go through `POST /api/media/upload` and
+ * land under:
+ *
+ *   {company-slug}/{bucket}/{timestamp}-{basename}.{ext}
+ *
+ * e.g. `pashupathi-lights/chat-media/1736-photo.jpg`
+ *
+ * Otherwise we fall back to Supabase Storage with the path convention
+ * from migration 020/023:
  *
  *   <bucket>/account-<account_id>/<timestamp>-<basename>.<ext>
- *
- * The first path segment (`account-<uuid>`) is what the bucket's RLS
- * write policies match on, so every caller MUST go through here rather
- * than hand-rolling a path — a mismatched segment is silently rejected
- * by RLS. Both the Flows builder (`node-config-form`) and the inbox
- * composer call this so the logic lives in exactly one place.
  */
 
 /** 16 MB — matches the `file_size_limit` on both buckets (migrations 016/020/023). */
@@ -68,15 +71,36 @@ export interface UploadAccountMediaResult {
   path: string;
 }
 
-/**
- * Upload a file to an account-scoped Storage bucket and return its public
- * URL. Throws with a user-facing message on auth / account-resolution /
- * upload failure — callers surface it via a toast.
- *
- * Size validation is the caller's responsibility (limits can differ per
- * feature); `MEDIA_MAX_BYTES` is exported for the common case.
- */
-export async function uploadAccountMedia(
+async function uploadViaS3Api(
+  bucket: string,
+  file: File,
+): Promise<UploadAccountMediaResult | "not_configured"> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("bucket", bucket);
+
+  const res = await fetch("/api/media/upload", {
+    method: "POST",
+    body: form,
+  });
+
+  if (res.status === 503) return "not_configured";
+
+  const json = (await res.json().catch(() => null)) as {
+    data?: { publicUrl?: string; path?: string };
+    error?: string;
+  } | null;
+
+  if (!res.ok) {
+    throw new Error(json?.error || `Upload failed (${res.status})`);
+  }
+  if (!json?.data?.publicUrl || !json.data.path) {
+    throw new Error("Upload failed: empty response");
+  }
+  return { publicUrl: json.data.publicUrl, path: json.data.path };
+}
+
+async function uploadViaSupabase(
   bucket: string,
   file: File,
 ): Promise<UploadAccountMediaResult> {
@@ -118,11 +142,27 @@ export async function uploadAccountMedia(
 }
 
 /**
+ * Upload a file to an account-scoped Storage bucket and return its public
+ * URL. Throws with a user-facing message on auth / account-resolution /
+ * upload failure — callers surface it via a toast.
+ *
+ * Prefers S3 when the server has AWS env configured; otherwise Supabase
+ * Storage. Size validation is the caller's responsibility (limits can
+ * differ per feature); `MEDIA_MAX_BYTES` is exported for the common case.
+ */
+export async function uploadAccountMedia(
+  bucket: string,
+  file: File,
+): Promise<UploadAccountMediaResult> {
+  const s3 = await uploadViaS3Api(bucket, file);
+  if (s3 !== "not_configured") return s3;
+  return uploadViaSupabase(bucket, file);
+}
+
+/**
  * Delete a previously-uploaded object. Used to GC media that was staged
  * (uploaded) but never sent — a cancelled draft or a failed Meta send —
- * so abandoned attachments don't accumulate in the public bucket. The
- * DELETE is gated by the same account-scoped RLS policy as the upload,
- * so a caller can only remove objects under their own account folder.
+ * so abandoned attachments don't accumulate in the public bucket.
  *
  * Best-effort: callers fire-and-forget and swallow errors (a missed
  * delete is a storage nit, not something to surface to the user).
@@ -131,6 +171,25 @@ export async function deleteAccountMedia(
   bucket: string,
   path: string,
 ): Promise<void> {
+  // S3 paths look like "company/bucket/file"; Supabase paths like
+  // "account-uuid/file". Prefer the API when the path has a company
+  // prefix (contains the bucket segment).
+  if (path.includes(`/${bucket}/`) || path.split("/").length >= 3) {
+    const res = await fetch("/api/media/upload", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    if (res.status === 503) {
+      // S3 not configured — fall through to Supabase.
+    } else if (!res.ok) {
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(json?.error || `Delete failed (${res.status})`);
+    } else {
+      return;
+    }
+  }
+
   const supabase = createClient();
   const { error } = await supabase.storage.from(bucket).remove([path]);
   if (error) throw new Error(error.message);
