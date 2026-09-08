@@ -197,7 +197,11 @@ export async function POST(request: Request) {
     // 401 (not 200) — we want Meta's delivery dashboard to show failures
     // loudly if a misconfiguration causes signatures to stop matching,
     // rather than silently eating events.
-    console.warn('[webhook] rejected request with invalid signature')
+    const companyHint = await resolveWebhookCompanyHint(rawBody)
+    console.warn(
+      `[webhook] rejected request with invalid signature` +
+        (companyHint ? `, ${companyHint}` : ''),
+    )
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
@@ -231,6 +235,68 @@ export async function POST(request: Request) {
   })
 
   return NextResponse.json({ status: 'received' }, { status: 200 })
+}
+
+/**
+ * Best-effort company label for invalid-signature logs. Signature
+ * verification runs before account routing; we still parse the body to
+ * read `phone_number_id` and map it to `accounts.name` so operators can
+ * see which WABA/number Meta was targeting (e.g. wrong META_APP_SECRET
+ * for that app). Never throws — logging must not delay the 401.
+ */
+async function resolveWebhookCompanyHint(rawBody: string): Promise<string | null> {
+  try {
+    const parsed = JSON.parse(rawBody) as {
+      entry?: Array<{
+        changes?: Array<{
+          value?: { metadata?: { phone_number_id?: string } }
+        }>
+      }>
+    }
+    const phoneNumberIds = [
+      ...new Set(
+        (parsed.entry ?? [])
+          .flatMap((e) => e.changes ?? [])
+          .map((c) => c.value?.metadata?.phone_number_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ]
+    if (phoneNumberIds.length === 0) return null
+
+    const { data: rows, error } = await supabaseAdmin()
+      .from('whatsapp_config')
+      .select('phone_number_id, accounts(name)')
+      .in('phone_number_id', phoneNumberIds)
+
+    if (error) {
+      console.warn(
+        '[webhook] company hint lookup failed:',
+        error.message,
+        `phone_number_id=${phoneNumberIds.join(',')}`,
+      )
+      return `phone_number_id=${phoneNumberIds.join(',')}`
+    }
+
+    if (!rows || rows.length === 0) {
+      return `unknown company (phone_number_id=${phoneNumberIds.join(',')})`
+    }
+
+    const labels = rows.map(
+      (row: {
+        phone_number_id: string
+        accounts: { name: string } | { name: string }[] | null
+      }) => {
+        const account = Array.isArray(row.accounts)
+          ? row.accounts[0]
+          : row.accounts
+        const name = account?.name?.trim() || 'unknown company'
+        return `${name} (phone_number_id=${row.phone_number_id})`
+      },
+    )
+    return labels.join('; ')
+  } catch {
+    return null
+  }
 }
 
 async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
