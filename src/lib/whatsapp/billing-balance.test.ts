@@ -118,7 +118,7 @@ describe("fetchWhatsAppBillingBalance", () => {
     expect(secondUrl).toContain("/fund-9?");
   });
 
-  it("falls back to extendedcredits when funding id has no balance", async () => {
+  it("falls back to unavailable when funding id has no balance (no BSP credits call)", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -134,28 +134,20 @@ describe("fetchWhatsAppBillingBalance", () => {
         );
       }
       if (url.includes("extendedcredits")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "credit-1",
-                credit_type: "WHATSAPP_BUSINESS",
-                credit_available: { amount: "12.00", currency: "INR" },
-              },
-            ],
-          }),
-          { status: 200 },
-        );
+        throw new Error("extendedcredits should not be called");
       }
       return new Response(JSON.stringify({ id: "x" }), { status: 200 });
     });
 
-    const result = await fetchWhatsAppBillingBalance({
-      accessToken: "tok",
-      wabaId: "waba-1",
+    await expect(
+      fetchWhatsAppBillingBalance({
+        accessToken: "tok",
+        wabaId: "waba-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "meta_permission",
+      message: expect.stringContaining("Meta Business Billing"),
     });
-    expect(result.amount).toBe("12.00");
-    expect(result.source).toBe("extendedcredits.credit_available");
   });
 
   it("maps Meta OAuth/permission errors on WABA lookup to meta_permission", async () => {

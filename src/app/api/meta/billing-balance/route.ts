@@ -70,11 +70,18 @@ export async function GET() {
         err.code === "meta_permission" ||
         err.code === "no_credit_line"
       ) {
+        const raw = err.message;
+        const friendly =
+          /solution provider|solution partner|do not have permission/i.test(
+            raw,
+          )
+            ? `Meta does not expose prepaid Current balance for this WhatsApp account through Cloud API. Open Meta Business Billing to view the live balance.`
+            : raw;
         return NextResponse.json({
           data: null,
           unavailable: {
             code: err.code,
-            message: err.message,
+            message: friendly,
             ...(err.details ?? { waba_id: undefined }),
           },
         });

@@ -325,7 +325,16 @@ export async function fetchWhatsAppBillingBalance(args: {
     `?fields=name,currency,primary_funding_id,owner_business_info`;
 
   const wabaRes = await metaGet(wabaUrl, accessToken);
-  if (!wabaRes.ok) throw wabaRes.error;
+  if (!wabaRes.ok) {
+    // Never surface Meta's BSP jargon for a simple WABA read failure.
+    throw new BillingBalanceError(
+      wabaRes.error.code,
+      wabaRes.error.code === "meta_permission"
+        ? `Meta does not expose prepaid Current balance for this WhatsApp account (WABA ${wabaId}) through Cloud API. Open Meta Business Billing to view the live balance.`
+        : wabaRes.error.message,
+      { waba_id: wabaId, primary_funding_id: null, business_id: null },
+    );
+  }
 
   const wabaBody = wabaRes.body as {
     currency?: string;
@@ -343,37 +352,17 @@ export async function fetchWhatsAppBillingBalance(args: {
     if (fromFunding) return fromFunding;
   }
 
-  // 3) Optional fallback: Business extendedcredits (often BSP-only → 403).
-  const businessId = wabaBody.owner_business_info?.id;
-  if (businessId) {
-    const creditsUrl =
-      `${META_API_BASE}/${encodeURIComponent(businessId)}/extendedcredits` +
-      `?fields=id,credit_type,balance,credit_available,max_balance`;
-    const creditsRes = await metaGet(creditsUrl, accessToken);
-    if (creditsRes.ok) {
-      const lines = ((creditsRes.body as { data?: ExtendedCreditLine[] })?.data ??
-        []) as ExtendedCreditLine[];
-      const picked = pickWhatsAppCreditLine(lines);
-      if (picked?.credit_available?.amount) {
-        return mapCreditLineToBalance(picked, wabaBody.currency ?? null);
-      }
-    } else if (
-      creditsRes.error.code !== "meta_permission" &&
-      !wabaBody.primary_funding_id
-    ) {
-      throw creditsRes.error;
-    }
-  }
+  // Do NOT call Business /extendedcredits here. That endpoint requires the
+  // app's Business to be a WhatsApp Solution Partner and surfaces a raw
+  // Meta 403 that confuses Reports users on normal Cloud API accounts.
 
   throw new BillingBalanceError(
     "meta_permission",
-    wabaBody.primary_funding_id
-      ? `Meta does not expose prepaid Current balance for WABA ${wabaId} via Cloud API with this token (funding id ${wabaBody.primary_funding_id} returned no readable balance). Open Meta Business Billing to view ₹ balance.`
-      : `Meta does not expose prepaid Current balance for WABA ${wabaId} via Cloud API with this token (no primary_funding_id; Business extendedcredits blocked). Open Meta Business Billing to view the balance.`,
+    `Meta does not expose prepaid Current balance for this WhatsApp account (WABA ${wabaId}) through Cloud API. Open Meta Business Billing to view the live balance.`,
     {
       waba_id: wabaId,
       primary_funding_id: wabaBody.primary_funding_id ?? null,
-      business_id: businessId ?? null,
+      business_id: wabaBody.owner_business_info?.id ?? null,
     },
   );
 }
