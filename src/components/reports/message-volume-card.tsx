@@ -147,28 +147,34 @@ export function MessageVolumeCard() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Metric
                 label={t("volumeTotal")}
+                hint={t("volumeTotalHint")}
                 value={formatCount(state.counts.total)}
                 emphasize
               />
               <Metric
                 label={t("volumeDelivered")}
+                hint={t("volumeDeliveredHint")}
                 value={formatCount(state.counts.delivered_or_read)}
                 emphasize
               />
               <Metric
                 label={t("volumeSent")}
+                hint={t("volumeSentHint")}
                 value={formatCount(state.counts.sent)}
               />
               <Metric
                 label={t("volumeDeliveredOnly")}
+                hint={t("volumeDeliveredOnlyHint")}
                 value={formatCount(state.counts.delivered)}
               />
               <Metric
                 label={t("volumeRead")}
+                hint={t("volumeReadHint")}
                 value={formatCount(state.counts.read)}
               />
               <Metric
                 label={t("volumeFailed")}
+                hint={t("volumeFailedHint")}
                 value={formatCount(state.counts.failed)}
               />
             </div>
@@ -190,10 +196,12 @@ export function MessageVolumeCard() {
 
 function Metric({
   label,
+  hint,
   value,
   emphasize,
 }: {
   label: string;
+  hint: string;
   value: string;
   emphasize?: boolean;
 }) {
@@ -208,6 +216,9 @@ function Metric({
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
         {value}
+      </p>
+      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+        {hint}
       </p>
     </div>
   );

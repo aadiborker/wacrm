@@ -85,11 +85,17 @@
     "volumeError": "Could not load message report",
     "volumeRangeLabel": "From {from} to {to}",
     "volumeTotal": "Total outbound",
+    "volumeTotalHint": "All outbound messages (agent + bot) in this date range.",
     "volumeDelivered": "Delivered (delivered + read)",
+    "volumeDeliveredHint": "Reached the customer’s phone (delivered or read).",
     "volumeSent": "Sent (not yet delivered)",
+    "volumeSentHint": "Accepted by Meta, waiting for a delivery receipt.",
     "volumeDeliveredOnly": "Delivered",
+    "volumeDeliveredOnlyHint": "On the device, but not marked as read yet.",
     "volumeRead": "Read",
+    "volumeReadHint": "Customer opened the message (read receipt).",
     "volumeFailed": "Failed",
+    "volumeFailedHint": "Did not send successfully (rejected or error).",
     "volumeTruncated": "Results were capped at 50,000 messages — narrow the date range for a full count."
   },
   "AccountAccess": {
