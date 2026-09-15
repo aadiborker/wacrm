@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import {
-  buildConversationAnalyticsField,
-  buildPricingAnalyticsField,
+  buildConversationAnalyticsUrl,
+  buildPricingAnalyticsUrl,
   fetchWhatsAppUsageAnalytics,
   flattenAnalyticsDataPoints,
   sumNumericField,
@@ -35,14 +35,16 @@ describe("flattenAnalyticsDataPoints", () => {
   });
 });
 
-describe("field builders", () => {
-  it("includes DAILY metrics", () => {
-    expect(buildConversationAnalyticsField(1, 2)).toContain(
-      "metric_types([CONVERSATION,COST])",
-    );
-    expect(buildPricingAnalyticsField(1, 2)).toContain(
-      "metric_types([COST,VOLUME])",
-    );
+describe("URL builders", () => {
+  it("uses analytics edges without metric_types", () => {
+    const conv = buildConversationAnalyticsUrl("waba-1", 100, 200);
+    expect(conv).toContain("/waba-1/conversation_analytics?");
+    expect(conv).toContain("granularity=DAILY");
+    expect(conv).not.toContain("metric_types");
+
+    const pricing = buildPricingAnalyticsUrl("waba-1", 100, 200);
+    expect(pricing).toContain("/waba-1/pricing_analytics?");
+    expect(pricing).not.toContain("metric_types");
   });
 });
 
@@ -54,12 +56,13 @@ describe("fetchWhatsAppUsageAnalytics", () => {
     vi.unstubAllGlobals();
   });
 
-  it("aggregates conversation and pricing analytics from WABA", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          id: "waba-1",
-          conversation_analytics: {
+  it("aggregates conversation and pricing analytics from WABA edges", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("conversation_analytics")) {
+        return new Response(
+          JSON.stringify({
             data: [
               {
                 data_points: [
@@ -68,21 +71,24 @@ describe("fetchWhatsAppUsageAnalytics", () => {
                 ],
               },
             ],
-          },
-          pricing_analytics: {
-            data: [
-              {
-                data_points: [
-                  { start: 1, end: 2, volume: 100, cost: 2.0 },
-                  { start: 2, end: 3, volume: 50, cost: 1.0 },
-                ],
-              },
-            ],
-          },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              data_points: [
+                { start: 1, end: 2, volume: 100, cost: 2.0 },
+                { start: 2, end: 3, volume: 50, cost: 1.0 },
+              ],
+            },
+          ],
         }),
         { status: 200 },
-      ),
-    );
+      );
+    });
 
     const result = await fetchWhatsAppUsageAnalytics({
       accessToken: "tok",
@@ -94,11 +100,11 @@ describe("fetchWhatsAppUsageAnalytics", () => {
     expect(result.totals.conversation_cost).toBe(2);
     expect(result.totals.message_volume).toBe(150);
     expect(result.totals.pricing_cost).toBe(3);
-    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain("/waba-1?");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("maps permission errors", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(
+  it("maps permission errors when both edges fail", async () => {
+    vi.mocked(fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           error: { message: "(#200) Requires permission", code: 200 },

@@ -95,20 +95,38 @@ export function flattenAnalyticsDataPoints(payload: unknown): Array<Record<strin
   return out;
 }
 
-export function buildConversationAnalyticsField(
+export function buildConversationAnalyticsUrl(
+  wabaId: string,
   start: number,
   end: number,
 ): string {
+  // Omit metric_types — Meta defaults to all metrics. Passing it via field
+  // expansion as `[CONVERSATION,COST]` made Graph reject with
+  // "metric_types must be an array".
+  const params = new URLSearchParams({
+    start: String(start),
+    end: String(end),
+    granularity: "DAILY",
+  });
   return (
-    `conversation_analytics.start(${start}).end(${end})` +
-    `.granularity(DAILY).metric_types([CONVERSATION,COST])`
+    `${META_API_BASE}/${encodeURIComponent(wabaId)}/conversation_analytics` +
+    `?${params.toString()}`
   );
 }
 
-export function buildPricingAnalyticsField(start: number, end: number): string {
+export function buildPricingAnalyticsUrl(
+  wabaId: string,
+  start: number,
+  end: number,
+): string {
+  const params = new URLSearchParams({
+    start: String(start),
+    end: String(end),
+    granularity: "DAILY",
+  });
   return (
-    `pricing_analytics.start(${start}).end(${end})` +
-    `.granularity(DAILY).metric_types([COST,VOLUME])`
+    `${META_API_BASE}/${encodeURIComponent(wabaId)}/pricing_analytics` +
+    `?${params.toString()}`
   );
 }
 
@@ -170,24 +188,32 @@ export async function fetchWhatsAppUsageAnalytics(args: {
   const { start, end } = unixRangeForDays(days);
   const { accessToken, wabaId } = args;
 
-  const fields = [
-    buildConversationAnalyticsField(start, end),
-    buildPricingAnalyticsField(start, end),
-  ].join(",");
+  const conversationUrl = buildConversationAnalyticsUrl(wabaId, start, end);
+  const pricingUrl = buildPricingAnalyticsUrl(wabaId, start, end);
 
-  const url =
-    `${META_API_BASE}/${encodeURIComponent(wabaId)}` +
-    `?fields=${encodeURIComponent(fields)}`;
+  const [conversationResult, pricingResult] = await Promise.allSettled([
+    metaGetJson(conversationUrl, accessToken),
+    metaGetJson(pricingUrl, accessToken),
+  ]);
 
-  const body = (await metaGetJson(url, accessToken)) as {
-    conversation_analytics?: unknown;
-    pricing_analytics?: unknown;
-  };
+  const hardErrors: UsageAnalyticsError[] = [];
+  let conversationBody: unknown = null;
+  let pricingBody: unknown = null;
 
-  const conversationPoints = flattenAnalyticsDataPoints(
-    body.conversation_analytics,
-  );
-  const pricingPoints = flattenAnalyticsDataPoints(body.pricing_analytics);
+  if (conversationResult.status === "fulfilled") {
+    conversationBody = conversationResult.value;
+  } else if (conversationResult.reason instanceof UsageAnalyticsError) {
+    hardErrors.push(conversationResult.reason);
+  }
+
+  if (pricingResult.status === "fulfilled") {
+    pricingBody = pricingResult.value;
+  } else if (pricingResult.reason instanceof UsageAnalyticsError) {
+    hardErrors.push(pricingResult.reason);
+  }
+
+  const conversationPoints = flattenAnalyticsDataPoints(conversationBody);
+  const pricingPoints = flattenAnalyticsDataPoints(pricingBody);
 
   const totals: UsageAnalyticsTotals = {
     conversations: sumNumericField(conversationPoints, "conversation"),
@@ -202,6 +228,12 @@ export async function fetchWhatsAppUsageAnalytics(args: {
     Object.values(totals).some((v) => v != null);
 
   if (!anyData) {
+    const first = hardErrors[0];
+    if (first) {
+      throw new UsageAnalyticsError(first.code, first.message, {
+        waba_id: wabaId,
+      });
+    }
     throw new UsageAnalyticsError(
       "empty",
       `Meta returned no conversation/pricing analytics for WABA ${wabaId} in the last ${days} days.`,
