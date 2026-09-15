@@ -52,11 +52,21 @@ export function BalanceCard() {
       const res = await fetch("/api/meta/billing-balance", {
         cache: "no-store",
       });
-      const body = (await res.json()) as {
+      const raw = await res.text();
+      let body: {
         data?: BalanceData;
         error?: string;
         code?: string;
-      };
+      } = {};
+      try {
+        body = raw ? (JSON.parse(raw) as typeof body) : {};
+      } catch {
+        setState({
+          status: "error",
+          message: `HTTP ${res.status}: server returned non-JSON (often a proxy timeout). Check pm2 logs.`,
+        });
+        return;
+      }
       if (res.status === 400 && body.code === "whatsapp_not_configured") {
         setState({
           status: "not_configured",
@@ -67,13 +77,19 @@ export function BalanceCard() {
       if (!res.ok || !body.data) {
         setState({
           status: "error",
-          message: body.error || t("errorTitle"),
+          message:
+            body.error ||
+            `HTTP ${res.status}: ${t("errorTitle")}${body.code ? ` (${body.code})` : ""}`,
         });
         return;
       }
       setState({ status: "success", data: body.data });
-    } catch {
-      setState({ status: "error", message: t("errorTitle") });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      setState({
+        status: "error",
+        message: `${t("errorTitle")}: ${detail}`,
+      });
     }
   }, [t]);
 
