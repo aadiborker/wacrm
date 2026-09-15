@@ -96,7 +96,21 @@
     "volumeReadHint": "Customer opened the message (read receipt).",
     "volumeFailed": "Failed",
     "volumeFailedHint": "Did not send successfully (rejected or error).",
-    "volumeTruncated": "Results were capped at 50,000 messages — narrow the date range for a full count."
+    "volumeTruncated": "Results were capped at 50,000 messages — narrow the date range for a full count.",
+    "categoryTitle": "By template category",
+    "categoryDescription": "Template sends use Marketing / Utility / Authentication from your saved templates. Free-form chat replies count as Session.",
+    "categoryMarketing": "Marketing",
+    "categoryMarketingHint": "Marketing template messages in this range.",
+    "categoryUtility": "Utility",
+    "categoryUtilityHint": "Utility template messages in this range.",
+    "categoryAuthentication": "Authentication",
+    "categoryAuthenticationHint": "OTP / authentication template messages.",
+    "categorySession": "Session",
+    "categorySessionHint": "Non-template outbound (free-form text, media, buttons).",
+    "categoryUnknown": "Unknown template",
+    "categoryUnknownHint": "Template send, but category not found in Templates.",
+    "categoryDeliveredLine": "{count} delivered",
+    "categoryFailedLine": "{count} failed"
   },
   "AccountAccess": {
     "unlinkedTitle": "This user is not linked to an account",

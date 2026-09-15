@@ -13,8 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  CATEGORY_KEYS,
   formatDdMmYyyy,
+  type CategoryBreakdown,
   type OutboundMessageCounts,
+  type TemplateCategoryKey,
 } from "@/lib/reports/message-volume";
 
 type ResultState =
@@ -26,6 +29,7 @@ type ResultState =
       to: string;
       truncated: boolean;
       counts: OutboundMessageCounts;
+      by_category: CategoryBreakdown;
     }
   | { status: "error"; message: string };
 
@@ -49,6 +53,22 @@ function formatCount(n: number): string {
   return new Intl.NumberFormat(undefined).format(n);
 }
 
+const CATEGORY_LABEL_KEY: Record<TemplateCategoryKey, string> = {
+  Marketing: "categoryMarketing",
+  Utility: "categoryUtility",
+  Authentication: "categoryAuthentication",
+  Session: "categorySession",
+  Unknown: "categoryUnknown",
+};
+
+const CATEGORY_HINT_KEY: Record<TemplateCategoryKey, string> = {
+  Marketing: "categoryMarketingHint",
+  Utility: "categoryUtilityHint",
+  Authentication: "categoryAuthenticationHint",
+  Session: "categorySessionHint",
+  Unknown: "categoryUnknownHint",
+};
+
 export function MessageVolumeCard() {
   const t = useTranslations("Reports");
   const defaults = defaultRange();
@@ -69,6 +89,7 @@ export function MessageVolumeCard() {
           to: string;
           truncated: boolean;
           counts: OutboundMessageCounts;
+          by_category: CategoryBreakdown;
         };
         error?: string;
       };
@@ -85,6 +106,7 @@ export function MessageVolumeCard() {
         to: body.data.to,
         truncated: body.data.truncated,
         counts: body.data.counts,
+        by_category: body.data.by_category,
       });
     } catch (err) {
       setState({
@@ -140,7 +162,7 @@ export function MessageVolumeCard() {
         ) : null}
 
         {state.status === "success" ? (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <p className="text-sm text-muted-foreground">
               {t("volumeRangeLabel", { from: state.from, to: state.to })}
             </p>
@@ -178,6 +200,48 @@ export function MessageVolumeCard() {
                 value={formatCount(state.counts.failed)}
               />
             </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium text-foreground">
+                {t("categoryTitle")}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {t("categoryDescription")}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {CATEGORY_KEYS.filter(
+                  (key) => state.by_category[key].total > 0 || key === "Marketing" || key === "Utility",
+                ).map((key) => {
+                  const bucket = state.by_category[key];
+                  return (
+                    <div
+                      key={key}
+                      className="rounded-lg border border-border bg-muted/30 px-3 py-3"
+                    >
+                      <p className="text-xs text-muted-foreground">
+                        {t(CATEGORY_LABEL_KEY[key])}
+                      </p>
+                      <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+                        {formatCount(bucket.total)}
+                      </p>
+                      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                        {t(CATEGORY_HINT_KEY[key])}
+                      </p>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {t("categoryDeliveredLine", {
+                          count: formatCount(bucket.delivered_or_read),
+                        })}
+                        {" · "}
+                        {t("categoryFailedLine", {
+                          count: formatCount(bucket.failed),
+                        })}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {state.truncated ? (
               <p className="text-xs text-amber-600 dark:text-amber-400">
                 {t("volumeTruncated")}

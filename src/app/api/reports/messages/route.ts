@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import {
   rangeToIsoBounds,
+  tallyByCategory,
   tallyOutboundStatuses,
 } from "@/lib/reports/message-volume";
 
@@ -9,7 +10,8 @@ import {
  * GET /api/reports/messages?from=DD/MM/YYYY&to=DD/MM/YYYY
  *
  * Outbound (agent + bot) message counts for the account in the inclusive
- * date range. Admin+ only.
+ * date range, plus Marketing / Utility / Authentication / Session split.
+ * Admin+ only.
  */
 export async function GET(request: Request) {
   try {
@@ -26,11 +28,35 @@ export async function GET(request: Request) {
       );
     }
 
-    // Page through status rows — accounts can send a lot; 5k pages keep
-    // memory bounded while covering typical report windows.
+    const { data: templates, error: tplError } = await supabase
+      .from("message_templates")
+      .select("name, category")
+      .eq("account_id", accountId);
+
+    if (tplError) {
+      console.error("[reports/messages] templates:", tplError);
+      return NextResponse.json(
+        { error: "Failed to load templates", code: "internal" },
+        { status: 500 },
+      );
+    }
+
+    // First matching name wins (same name can exist in multiple languages).
+    const categoryByName = new Map<string, string>();
+    for (const row of templates ?? []) {
+      const name = row.name as string;
+      if (!categoryByName.has(name) && row.category) {
+        categoryByName.set(name, row.category as string);
+      }
+    }
+
     const PAGE = 1000;
     const MAX_ROWS = 50_000;
-    const statuses: Array<{ status: string | null }> = [];
+    const rows: Array<{
+      status: string | null;
+      template_name: string | null;
+      category: string | null;
+    }> = [];
     let fromIdx = 0;
     let truncated = false;
 
@@ -38,7 +64,7 @@ export async function GET(request: Request) {
       const toIdx = fromIdx + PAGE - 1;
       const { data, error } = await supabase
         .from("messages")
-        .select("status, conversations!inner(account_id)")
+        .select("status, template_name, conversations!inner(account_id)")
         .eq("conversations.account_id", accountId)
         .in("sender_type", ["agent", "bot"])
         .gte("created_at", bounds.fromIso)
@@ -54,9 +80,21 @@ export async function GET(request: Request) {
         );
       }
 
-      const rows = (data ?? []) as Array<{ status: string | null }>;
-      statuses.push(...rows);
-      if (rows.length < PAGE) break;
+      const batch = (data ?? []) as Array<{
+        status: string | null;
+        template_name: string | null;
+      }>;
+
+      for (const row of batch) {
+        const name = row.template_name?.trim() || null;
+        rows.push({
+          status: row.status,
+          template_name: name,
+          category: name ? (categoryByName.get(name) ?? null) : null,
+        });
+      }
+
+      if (batch.length < PAGE) break;
       fromIdx += PAGE;
       if (fromIdx >= MAX_ROWS) {
         truncated = true;
@@ -64,7 +102,8 @@ export async function GET(request: Request) {
       }
     }
 
-    const counts = tallyOutboundStatuses(statuses);
+    const counts = tallyOutboundStatuses(rows);
+    const by_category = tallyByCategory(rows);
 
     return NextResponse.json({
       data: {
@@ -74,6 +113,7 @@ export async function GET(request: Request) {
         to_iso: bounds.toIso,
         truncated,
         counts,
+        by_category,
       },
     });
   } catch (err) {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizeTemplateCategory,
   parseDdMmYyyy,
   rangeToIsoBounds,
+  tallyByCategory,
   tallyOutboundStatuses,
 } from "./message-volume";
 
@@ -49,5 +51,31 @@ describe("tallyOutboundStatuses", () => {
     expect(t.read).toBe(1);
     expect(t.failed).toBe(1);
     expect(t.delivered_or_read).toBe(2);
+  });
+});
+
+describe("normalizeTemplateCategory", () => {
+  it("maps Meta categories and session messages", () => {
+    expect(normalizeTemplateCategory("MARKETING", true)).toBe("Marketing");
+    expect(normalizeTemplateCategory("Utility", true)).toBe("Utility");
+    expect(normalizeTemplateCategory(null, false)).toBe("Session");
+    expect(normalizeTemplateCategory(null, true)).toBe("Unknown");
+  });
+});
+
+describe("tallyByCategory", () => {
+  it("splits marketing vs utility vs session", () => {
+    const b = tallyByCategory([
+      { status: "delivered", template_name: "promo", category: "Marketing" },
+      { status: "read", template_name: "order_update", category: "Utility" },
+      { status: "sent", template_name: null, category: null },
+      { status: "failed", template_name: "promo", category: "Marketing" },
+    ]);
+    expect(b.Marketing.total).toBe(2);
+    expect(b.Marketing.delivered_or_read).toBe(1);
+    expect(b.Marketing.failed).toBe(1);
+    expect(b.Utility.total).toBe(1);
+    expect(b.Utility.delivered_or_read).toBe(1);
+    expect(b.Session.total).toBe(1);
   });
 });

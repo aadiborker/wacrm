@@ -14,6 +14,29 @@ export type OutboundMessageCounts = {
   delivered_or_read: number;
 };
 
+export type TemplateCategoryKey =
+  | "Marketing"
+  | "Utility"
+  | "Authentication"
+  | "Session"
+  | "Unknown";
+
+export type CategoryBucket = {
+  total: number;
+  delivered_or_read: number;
+  failed: number;
+};
+
+export type CategoryBreakdown = Record<TemplateCategoryKey, CategoryBucket>;
+
+export const CATEGORY_KEYS: TemplateCategoryKey[] = [
+  "Marketing",
+  "Utility",
+  "Authentication",
+  "Session",
+  "Unknown",
+];
+
 export function emptyOutboundCounts(): OutboundMessageCounts {
   return {
     total: 0,
@@ -24,6 +47,29 @@ export function emptyOutboundCounts(): OutboundMessageCounts {
     failed: 0,
     delivered_or_read: 0,
   };
+}
+
+export function emptyCategoryBreakdown(): CategoryBreakdown {
+  return {
+    Marketing: { total: 0, delivered_or_read: 0, failed: 0 },
+    Utility: { total: 0, delivered_or_read: 0, failed: 0 },
+    Authentication: { total: 0, delivered_or_read: 0, failed: 0 },
+    Session: { total: 0, delivered_or_read: 0, failed: 0 },
+    Unknown: { total: 0, delivered_or_read: 0, failed: 0 },
+  };
+}
+
+/** Map DB / Meta category strings onto our report keys. */
+export function normalizeTemplateCategory(
+  raw: string | null | undefined,
+  hasTemplateName: boolean,
+): TemplateCategoryKey {
+  if (!hasTemplateName) return "Session";
+  const c = (raw ?? "").trim().toLowerCase();
+  if (c === "marketing") return "Marketing";
+  if (c === "utility") return "Utility";
+  if (c === "authentication" || c === "auth") return "Authentication";
+  return "Unknown";
 }
 
 /** Parse strict DD/MM/YYYY → { y, m, d } or null. */
@@ -99,4 +145,26 @@ export function tallyOutboundStatuses(
   }
   counts.delivered_or_read = counts.delivered + counts.read;
   return counts;
+}
+
+export function tallyByCategory(
+  rows: Array<{
+    status: string | null;
+    template_name: string | null;
+    category: string | null;
+  }>,
+): CategoryBreakdown {
+  const breakdown = emptyCategoryBreakdown();
+  for (const row of rows) {
+    const key = normalizeTemplateCategory(
+      row.category,
+      Boolean(row.template_name?.trim()),
+    );
+    const bucket = breakdown[key];
+    bucket.total += 1;
+    const s = row.status ?? "";
+    if (s === "delivered" || s === "read") bucket.delivered_or_read += 1;
+    if (s === "failed") bucket.failed += 1;
+  }
+  return breakdown;
 }
