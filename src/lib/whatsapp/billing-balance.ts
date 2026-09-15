@@ -7,6 +7,8 @@
 
 const META_API_VERSION = "v21.0";
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
+/** Keep under typical nginx/Cloudflare proxy limits so we return JSON, not HTML 502. */
+const META_BILLING_FETCH_TIMEOUT_MS = 15_000;
 
 export type BillingBalanceErrorCode =
   | "whatsapp_not_configured"
@@ -100,6 +102,37 @@ function throwFromMetaResponse(response: Response, body: unknown): never {
   );
 }
 
+async function metaGet(url: string, accessToken: string): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(META_BILLING_FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const name = err instanceof Error ? err.name : "";
+    const message = err instanceof Error ? err.message : String(err);
+    if (
+      name === "TimeoutError" ||
+      name === "AbortError" ||
+      /aborted|timeout/i.test(message)
+    ) {
+      throw new BillingBalanceError(
+        "meta_upstream",
+        "Meta billing request timed out. Try again, or check Meta Business billing directly.",
+      );
+    }
+    throw new BillingBalanceError(
+      "meta_upstream",
+      `Could not reach Meta: ${message}`,
+    );
+  }
+  const body = await readMetaJson(response);
+  if (!response.ok) throwFromMetaResponse(response, body);
+  return body;
+}
+
 export async function fetchWhatsAppBillingBalance(args: {
   accessToken: string;
   wabaId: string;
@@ -109,18 +142,12 @@ export async function fetchWhatsAppBillingBalance(args: {
     `${META_API_BASE}/${encodeURIComponent(wabaId)}` +
     `?fields=owner_business_info,currency,primary_funding_id`;
 
-  const wabaRes = await fetch(wabaUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    cache: "no-store",
-  });
-  const wabaBody = await readMetaJson(wabaRes);
-  if (!wabaRes.ok) throwFromMetaResponse(wabaRes, wabaBody);
-
-  const waba = wabaBody as {
+  const wabaBody = (await metaGet(wabaUrl, accessToken)) as {
     currency?: string;
     owner_business_info?: { id?: string };
   };
-  const businessId = waba.owner_business_info?.id;
+
+  const businessId = wabaBody.owner_business_info?.id;
   if (!businessId) {
     throw new BillingBalanceError(
       "meta_permission",
@@ -132,15 +159,11 @@ export async function fetchWhatsAppBillingBalance(args: {
     `${META_API_BASE}/${encodeURIComponent(businessId)}/extendedcredits` +
     `?fields=id,credit_type,balance,credit_available,max_balance`;
 
-  const creditsRes = await fetch(creditsUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    cache: "no-store",
-  });
-  const creditsBody = await readMetaJson(creditsRes);
-  if (!creditsRes.ok) throwFromMetaResponse(creditsRes, creditsBody);
+  const creditsBody = (await metaGet(creditsUrl, accessToken)) as {
+    data?: ExtendedCreditLine[];
+  };
 
-  const lines = ((creditsBody as { data?: ExtendedCreditLine[] })?.data ??
-    []) as ExtendedCreditLine[];
+  const lines = (creditsBody.data ?? []) as ExtendedCreditLine[];
   const picked = pickWhatsAppCreditLine(lines);
   if (!picked) {
     throw new BillingBalanceError(
@@ -148,5 +171,5 @@ export async function fetchWhatsAppBillingBalance(args: {
       "No Meta extended credit line found for this business.",
     );
   }
-  return mapCreditLineToBalance(picked, waba.currency ?? null);
+  return mapCreditLineToBalance(picked, wabaBody.currency ?? null);
 }

@@ -64,9 +64,12 @@ export async function GET() {
     return NextResponse.json({ data });
   } catch (err) {
     if (err instanceof BillingBalanceError) {
+      // Use 403 for permission / 424 for upstream so Cloudflare HTML 502
+      // is not confused with our JSON error body.
+      const status = err.code === "meta_permission" ? 403 : 424;
       return NextResponse.json(
         { error: err.message, code: err.code },
-        { status: 502 },
+        { status },
       );
     }
     return toErrorResponse(err);
