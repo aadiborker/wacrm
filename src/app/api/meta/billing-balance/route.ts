@@ -64,11 +64,24 @@ export async function GET() {
     return NextResponse.json({ data });
   } catch (err) {
     if (err instanceof BillingBalanceError) {
-      // Use 403 for permission / 424 for upstream so Cloudflare HTML 502
-      // is not confused with our JSON error body.
-      const status = err.code === "meta_permission" ? 403 : 424;
+      // Meta often cannot expose prepaid wallet balance on Cloud API.
+      // Return 200 + unavailable so the UI is not confused with auth 403.
+      if (
+        err.code === "meta_permission" ||
+        err.code === "no_credit_line"
+      ) {
+        return NextResponse.json({
+          data: null,
+          unavailable: {
+            code: err.code,
+            message: err.message,
+            ...(err.details ?? { waba_id: undefined }),
+          },
+        });
+      }
+      const status = 424;
       return NextResponse.json(
-        { error: err.message, code: err.code },
+        { error: err.message, code: err.code, ...(err.details ?? {}) },
         { status },
       );
     }

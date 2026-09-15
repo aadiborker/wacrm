@@ -26,6 +26,7 @@ interface BalanceData {
 type LoadState =
   | { status: "loading" }
   | { status: "success"; data: BalanceData }
+  | { status: "unavailable"; message: string; wabaId?: string }
   | { status: "not_configured"; message: string }
   | { status: "error"; message: string };
 
@@ -54,9 +55,15 @@ export function BalanceCard() {
       });
       const raw = await res.text();
       let body: {
-        data?: BalanceData;
+        data?: BalanceData | null;
         error?: string;
         code?: string;
+        unavailable?: {
+          code?: string;
+          message?: string;
+          waba_id?: string;
+          primary_funding_id?: string | null;
+        };
       } = {};
       try {
         body = raw ? (JSON.parse(raw) as typeof body) : {};
@@ -74,11 +81,20 @@ export function BalanceCard() {
         });
         return;
       }
+      if (res.ok && body.unavailable) {
+        setState({
+          status: "unavailable",
+          message: body.unavailable.message || t("unavailableBody"),
+          wabaId: body.unavailable.waba_id,
+        });
+        return;
+      }
       if (!res.ok || !body.data) {
         setState({
           status: "error",
           message:
             body.error ||
+            body.unavailable?.message ||
             `HTTP ${res.status}: ${t("errorTitle")}${body.code ? ` (${body.code})` : ""}`,
         });
         return;
@@ -147,6 +163,32 @@ export function BalanceCard() {
             >
               {t("viewInMeta")}
               <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </div>
+        ) : null}
+
+        {state.status === "unavailable" ? (
+          <div className="space-y-3">
+            <p className="font-medium text-foreground">
+              {t("unavailableTitle")}
+            </p>
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+            {state.wabaId ? (
+              <p className="text-xs text-muted-foreground">
+                WABA ID: {state.wabaId}
+              </p>
+            ) : null}
+            <a
+              href={t("metaBillingUrl")}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                buttonVariants({ variant: "secondary", size: "sm" }),
+                "inline-flex",
+              )}
+            >
+              {t("viewInMeta")}
+              <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
             </a>
           </div>
         ) : null}

@@ -20,10 +20,20 @@ export type BillingBalanceErrorCode =
 
 export class BillingBalanceError extends Error {
   readonly code: BillingBalanceErrorCode;
-  constructor(code: BillingBalanceErrorCode, message: string) {
+  readonly details?: {
+    waba_id?: string;
+    primary_funding_id?: string | null;
+    business_id?: string | null;
+  };
+  constructor(
+    code: BillingBalanceErrorCode,
+    message: string,
+    details?: BillingBalanceError["details"],
+  ) {
     super(message);
     this.name = "BillingBalanceError";
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -358,7 +368,12 @@ export async function fetchWhatsAppBillingBalance(args: {
   throw new BillingBalanceError(
     "meta_permission",
     wabaBody.primary_funding_id
-      ? `WABA ${wabaId} resolved funding id ${wabaBody.primary_funding_id}, but Meta did not return a readable prepaid balance for this token. Prepaid "Current balance" in Business Suite is often not exposed on Cloud API for non–Solution Partner apps.`
-      : `WABA ${wabaId} has no primary_funding_id and Meta blocked Business extendedcredits. Prepaid Current balance is not available via this WhatsApp token.`,
+      ? `Meta does not expose prepaid Current balance for WABA ${wabaId} via Cloud API with this token (funding id ${wabaBody.primary_funding_id} returned no readable balance). Open Meta Business Billing to view ₹ balance.`
+      : `Meta does not expose prepaid Current balance for WABA ${wabaId} via Cloud API with this token (no primary_funding_id; Business extendedcredits blocked). Open Meta Business Billing to view the balance.`,
+    {
+      waba_id: wabaId,
+      primary_funding_id: wabaBody.primary_funding_id ?? null,
+      business_id: businessId ?? null,
+    },
   );
 }

@@ -83,6 +83,8 @@
     "notConfiguredBody": "Connect WhatsApp in Settings to load Meta balance.",
     "openSettings": "Open WhatsApp settings",
     "errorTitle": "Could not load balance",
+    "unavailableTitle": "Balance not available from Meta API",
+    "unavailableBody": "Meta does not expose prepaid Current balance for this WhatsApp account through Cloud API. View it in Meta Business Billing.",
     "retry": "Try again",
     "viewInMeta": "View in Meta Billing",
     "metaBillingUrl": "https://business.facebook.com/billing_hub/accounts"
