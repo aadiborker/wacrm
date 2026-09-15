@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { useAuth } from "@/hooks/use-auth";
 import { canEditSettings } from "@/lib/auth/roles";
 import { BalanceCard } from "@/components/reports/balance-card";
+import { UsageAnalyticsCard } from "@/components/reports/usage-analytics-card";
 
 export default function ReportsPage() {
   const t = useTranslations("Reports");
@@ -35,6 +36,7 @@ export default function ReportsPage() {
       </div>
 
       <BalanceCard />
+      <UsageAnalyticsCard />
 
       <p className="text-sm text-muted-foreground">{t("comingSoon")}</p>
     </div>
