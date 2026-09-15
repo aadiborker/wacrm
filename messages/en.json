@@ -21,6 +21,7 @@
   "Sidebar": {
     "title": "ReplyFlow",
     "dashboard": "Dashboard",
+    "reports": "Reports",
     "inbox": "Inbox",
     "notifications": "Notifications",
     "contacts": "Contacts",
@@ -48,6 +49,7 @@
   },
   "Header": {
     "dashboard": "Dashboard",
+    "reports": "Reports",
     "inbox": "Inbox",
     "notifications": "Notifications",
     "contacts": "Contacts",
@@ -67,6 +69,23 @@
   },
   "ModeToggle": {
     "switchMode": "Switch to {mode} mode"
+  },
+  "Reports": {
+    "title": "Reports",
+    "subtitle": "Billing and usage for this workspace",
+    "comingSoon": "More reports coming soon",
+    "balanceTitle": "Current balance",
+    "balanceDescription": "WhatsApp prepaid / credit available from Meta for this company",
+    "lastUpdated": "Updated {time}",
+    "refresh": "Refresh",
+    "loading": "Loading balance…",
+    "notConfiguredTitle": "WhatsApp not configured",
+    "notConfiguredBody": "Connect WhatsApp in Settings to load Meta balance.",
+    "openSettings": "Open WhatsApp settings",
+    "errorTitle": "Could not load balance",
+    "retry": "Try again",
+    "viewInMeta": "View in Meta Billing",
+    "metaBillingUrl": "https://business.facebook.com/billing_hub/accounts"
   },
   "AccountAccess": {
     "unlinkedTitle": "This user is not linked to an account",
