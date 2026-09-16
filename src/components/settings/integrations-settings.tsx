@@ -44,6 +44,9 @@ type ShopifyConnection = {
   scope: string | null;
   order_template_name: string | null;
   order_template_language: string;
+  abandoned_template_name: string | null;
+  abandoned_template_language: string;
+  abandoned_delay_hours: number;
   webhook_id: string | null;
   created_at: string;
   updated_at: string;
@@ -73,8 +76,13 @@ export function IntegrationsSettings() {
   const [shopDomain, setShopDomain] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [templateLanguage, setTemplateLanguage] = useState('en');
+  const [abandonedTemplateName, setAbandonedTemplateName] = useState('');
+  const [abandonedTemplateLanguage, setAbandonedTemplateLanguage] =
+    useState('en');
+  const [abandonedDelayHours, setAbandonedDelayHours] = useState('10');
   const [shopifyConnecting, setShopifyConnecting] = useState(false);
   const [shopifyDisconnecting, setShopifyDisconnecting] = useState(false);
+  const [shopifySaving, setShopifySaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -108,6 +116,17 @@ export function IntegrationsSettings() {
         }
         if (data.connection?.order_template_language) {
           setTemplateLanguage(data.connection.order_template_language);
+        }
+        if (data.connection?.abandoned_template_name) {
+          setAbandonedTemplateName(data.connection.abandoned_template_name);
+        }
+        if (data.connection?.abandoned_template_language) {
+          setAbandonedTemplateLanguage(
+            data.connection.abandoned_template_language,
+          );
+        }
+        if (typeof data.connection?.abandoned_delay_hours === 'number') {
+          setAbandonedDelayHours(String(data.connection.abandoned_delay_hours));
         }
       }
     } catch (err) {
@@ -149,8 +168,43 @@ export function IntegrationsSettings() {
       shop,
       template_name: tmpl,
       template_language: templateLanguage.trim() || 'en',
+      abandoned_template_name: abandonedTemplateName.trim(),
+      abandoned_template_language: abandonedTemplateLanguage.trim() || 'en',
+      abandoned_delay_hours: abandonedDelayHours.trim() || '10',
     });
     window.location.href = `/api/shopify/install?${params.toString()}`;
+  }
+
+  async function handleSaveShopifySettings() {
+    setShopifySaving(true);
+    try {
+      const delay = Math.floor(Number(abandonedDelayHours));
+      const res = await fetch('/api/account/shopify', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_template_name: templateName.trim() || undefined,
+          order_template_language: templateLanguage.trim() || 'en',
+          abandoned_template_name: abandonedTemplateName.trim(),
+          abandoned_template_language:
+            abandonedTemplateLanguage.trim() || 'en',
+          abandoned_delay_hours: Number.isFinite(delay) ? delay : 10,
+          reregister_webhooks: true,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || t('shopifySaveFailed'));
+        return;
+      }
+      setShopifyConnection(data.connection as ShopifyConnection);
+      toast.success(t('shopifySaveSuccess'));
+    } catch (err) {
+      console.error('[IntegrationsSettings] shopify save:', err);
+      toast.error(t('networkError'));
+    } finally {
+      setShopifySaving(false);
+    }
   }
 
   async function handleDisconnectShopify() {
@@ -267,35 +321,83 @@ export function IntegrationsSettings() {
               {t('shopifyNotConfigured')}
             </p>
           ) : shopifyConnection ? (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <p className="text-sm text-foreground">
                 {t('shopifyConnected', { shop: shopifyConnection.shop_domain })}
               </p>
-              {shopifyConnection.order_template_name ? (
-                <p className="text-muted-foreground text-xs">
-                  {t('shopifyTemplate', {
-                    name: shopifyConnection.order_template_name,
-                    lang: shopifyConnection.order_template_language,
-                  })}
-                </p>
-              ) : null}
               <RequireRole min="admin">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void handleDisconnectShopify()}
-                  disabled={shopifyDisconnecting}
-                  className="border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60 hover:bg-red-500/20 hover:text-red-200"
-                >
-                  {shopifyDisconnecting ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="size-4" />
-                  )}
-                  {shopifyDisconnecting
-                    ? t('shopifyDisconnecting')
-                    : t('shopifyDisconnect')}
-                </Button>
+                <div className="space-y-3 max-w-md">
+                  <div className="space-y-2">
+                    <Label htmlFor="shopify-template-connected">
+                      {t('shopifyTemplateLabel')}
+                    </Label>
+                    <Input
+                      id="shopify-template-connected"
+                      value={templateName}
+                      onChange={(e) => setTemplateName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="shopify-abandoned-connected">
+                      {t('shopifyAbandonedTemplateLabel')}
+                    </Label>
+                    <Input
+                      id="shopify-abandoned-connected"
+                      placeholder={t('shopifyAbandonedTemplatePlaceholder')}
+                      value={abandonedTemplateName}
+                      onChange={(e) => setAbandonedTemplateName(e.target.value)}
+                    />
+                    <p className="text-muted-foreground text-xs">
+                      {t('shopifyAbandonedTemplateHint')}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="shopify-delay-connected">
+                      {t('shopifyAbandonedDelayLabel')}
+                    </Label>
+                    <Input
+                      id="shopify-delay-connected"
+                      type="number"
+                      min={0}
+                      max={168}
+                      value={abandonedDelayHours}
+                      onChange={(e) => setAbandonedDelayHours(e.target.value)}
+                    />
+                    <p className="text-muted-foreground text-xs">
+                      {t('shopifyAbandonedDelayHint')}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={() => void handleSaveShopifySettings()}
+                      disabled={shopifySaving}
+                    >
+                      {shopifySaving ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : null}
+                      {shopifySaving ? t('shopifySaving') : t('shopifySave')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="default"
+                      onClick={() => void handleDisconnectShopify()}
+                      disabled={shopifyDisconnecting}
+                      className="border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60 hover:bg-red-500/20 hover:text-red-200"
+                    >
+                      {shopifyDisconnecting ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-4" />
+                      )}
+                      {shopifyDisconnecting
+                        ? t('shopifyDisconnecting')
+                        : t('shopifyDisconnect')}
+                    </Button>
+                  </div>
+                  <p className="text-muted-foreground text-xs">
+                    {t('shopifyReconnectHint')}
+                  </p>
+                </div>
               </RequireRole>
             </div>
           ) : (
@@ -334,6 +436,36 @@ export function IntegrationsSettings() {
                     value={templateLanguage}
                     onChange={(e) => setTemplateLanguage(e.target.value)}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="shopify-abandoned">
+                    {t('shopifyAbandonedTemplateLabel')}
+                  </Label>
+                  <Input
+                    id="shopify-abandoned"
+                    placeholder={t('shopifyAbandonedTemplatePlaceholder')}
+                    value={abandonedTemplateName}
+                    onChange={(e) => setAbandonedTemplateName(e.target.value)}
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    {t('shopifyAbandonedTemplateHint')}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="shopify-delay">
+                    {t('shopifyAbandonedDelayLabel')}
+                  </Label>
+                  <Input
+                    id="shopify-delay"
+                    type="number"
+                    min={0}
+                    max={168}
+                    value={abandonedDelayHours}
+                    onChange={(e) => setAbandonedDelayHours(e.target.value)}
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    {t('shopifyAbandonedDelayHint')}
+                  </p>
                 </div>
                 <Button
                   onClick={handleConnectShopify}

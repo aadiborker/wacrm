@@ -17,6 +17,9 @@ export interface ShopifyOAuthState {
   shop: string;
   orderTemplateName: string;
   orderTemplateLanguage: string;
+  abandonedTemplateName: string;
+  abandonedTemplateLanguage: string;
+  abandonedDelayHours: number;
 }
 
 export function createOAuthNonce(): string {
@@ -95,7 +98,10 @@ export function parseOAuthState(raw: string | undefined): ShopifyOAuthState | nu
       typeof parsed.userId !== 'string' ||
       typeof parsed.shop !== 'string' ||
       typeof parsed.orderTemplateName !== 'string' ||
-      typeof parsed.orderTemplateLanguage !== 'string'
+      typeof parsed.orderTemplateLanguage !== 'string' ||
+      typeof parsed.abandonedTemplateName !== 'string' ||
+      typeof parsed.abandonedTemplateLanguage !== 'string' ||
+      typeof parsed.abandonedDelayHours !== 'number'
     ) {
       return null;
     }

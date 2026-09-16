@@ -1,8 +1,12 @@
-// POST /api/shopify/webhook — Shopify → ReplyFlow (orders/create → WhatsApp).
+// POST /api/shopify/webhook — orders/create + checkouts/* → WhatsApp / schedule.
 
 import { NextResponse } from 'next/server';
 
 import { supabaseAdmin } from '@/lib/flows/admin-client';
+import {
+  cancelAbandonedForOrder,
+  upsertAbandonedCheckoutReminder,
+} from '@/lib/shopify/abandoned';
 import { isShopifyConfigured } from '@/lib/shopify/config';
 import { verifyShopifyWebhookHmac } from '@/lib/shopify/hmac';
 import {
@@ -36,15 +40,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid shop' }, { status: 400 });
     }
 
-    // Acknowledge unknown topics quickly (mandatory GDPR topics etc.).
-    if (topic !== 'orders/create') {
-      return NextResponse.json({ ok: true, ignored: topic });
-    }
-
     const db = supabaseAdmin();
     const { data: connection, error: connErr } = await db
       .from('shopify_connections')
-      .select('account_id, order_template_name, order_template_language')
+      .select(
+        'account_id, order_template_name, order_template_language, abandoned_delay_hours',
+      )
       .eq('shop_domain', shop)
       .maybeSingle();
 
@@ -53,24 +54,42 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, skipped: 'no_connection' });
     }
 
+    const accountId = connection.account_id as string;
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(rawBody) as Record<string, unknown>;
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
+
+    if (topic === 'checkouts/create' || topic === 'checkouts/update') {
+      const delayHours =
+        typeof connection.abandoned_delay_hours === 'number'
+          ? connection.abandoned_delay_hours
+          : 10;
+      const result = await upsertAbandonedCheckoutReminder(db, {
+        accountId,
+        shopDomain: shop,
+        checkout: payload,
+        delayHours,
+      });
+      return NextResponse.json({ ok: true, topic, ...result });
+    }
+
+    if (topic !== 'orders/create') {
+      return NextResponse.json({ ok: true, ignored: topic });
+    }
+
     const templateName = connection.order_template_name as string | null;
     if (!templateName) {
       console.warn(`[shopify/webhook] no template for shop ${shop}`);
       return NextResponse.json({ ok: true, skipped: 'no_template' });
     }
 
-    let order: Record<string, unknown>;
-    try {
-      order = JSON.parse(rawBody) as Record<string, unknown>;
-    } catch {
-      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
-    }
-
     const shopifyOrderId =
-      order.id != null ? String(order.id) : extractOrderNumber(order);
+      payload.id != null ? String(payload.id) : extractOrderNumber(payload);
 
-    // Claim this order once — second delivery (duplicate webhook / retry) skips send.
-    const accountId = connection.account_id as string;
     const { error: claimErr } = await db.from('shopify_order_events').insert({
       account_id: accountId,
       shop_domain: shop,
@@ -79,7 +98,6 @@ export async function POST(request: Request) {
     });
 
     if (claimErr) {
-      // Unique violation = already processed.
       if (claimErr.code === '23505') {
         console.info(
           `[shopify/webhook] duplicate order ${shopifyOrderId} for ${shop} — skip`,
@@ -90,19 +108,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Internal error' }, { status: 500 });
     }
 
-    const phone = extractOrderPhone(order);
+    const phone = extractOrderPhone(payload);
+    const email =
+      typeof payload.email === 'string' ? payload.email.trim() : null;
+
+    // Customer completed purchase — don't send abandoned reminder.
+    await cancelAbandonedForOrder(db, {
+      shopDomain: shop,
+      phone,
+      email,
+    });
+
     if (!phone) {
       console.warn(
-        `[shopify/webhook] order ${extractOrderNumber(order)} has no phone`,
+        `[shopify/webhook] order ${extractOrderNumber(payload)} has no phone`,
       );
       return NextResponse.json({ ok: true, skipped: 'no_phone' });
     }
 
-    const name = extractOrderCustomerName(order);
-    const orderNumber = extractOrderNumber(order);
+    const name = extractOrderCustomerName(payload);
+    const orderNumber = extractOrderNumber(payload);
     const firstName =
       name?.split(/\s+/)[0] ||
-      (typeof order.email === 'string' ? order.email : 'there');
+      (typeof payload.email === 'string' ? payload.email : 'there');
 
     const resolved = await resolveConversationByPhone(
       db,
@@ -130,7 +158,6 @@ export async function POST(request: Request) {
       console.error(
         `[shopify/webhook] send failed: ${err.code} ${err.message}`,
       );
-      // 200 so Shopify does not retry forever on template/config mistakes.
       return NextResponse.json({
         ok: false,
         error: err.code,

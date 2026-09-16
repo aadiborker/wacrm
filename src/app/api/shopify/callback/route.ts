@@ -11,7 +11,7 @@ import {
   parseOAuthState,
 } from '@/lib/shopify/oauth';
 import { normalizeShopDomain } from '@/lib/shopify/shop';
-import { registerOrdersCreateWebhook } from '@/lib/shopify/webhooks';
+import { registerShopifyWebhooks } from '@/lib/shopify/webhooks';
 import { encrypt } from '@/lib/whatsapp/encryption';
 
 function settingsRedirect(query: Record<string, string>): NextResponse {
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { accessToken, scope } = await exchangeAccessToken(shop, code);
-    const webhookId = await registerOrdersCreateWebhook(shop, accessToken);
+    const webhookId = await registerShopifyWebhooks(shop, accessToken);
 
     const db = supabaseAdmin();
     const now = new Date().toISOString();
@@ -88,6 +88,9 @@ export async function GET(request: NextRequest) {
         scope,
         order_template_name: oauthState.orderTemplateName,
         order_template_language: oauthState.orderTemplateLanguage,
+        abandoned_template_name: oauthState.abandonedTemplateName || null,
+        abandoned_template_language: oauthState.abandonedTemplateLanguage,
+        abandoned_delay_hours: oauthState.abandonedDelayHours,
         webhook_id: webhookId,
         installed_by: oauthState.userId,
         updated_at: now,

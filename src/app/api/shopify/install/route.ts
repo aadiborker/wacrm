@@ -1,4 +1,5 @@
 // GET /api/shopify/install?shop=&template_name=&template_language=
+//   &abandoned_template_name=&abandoned_template_language=&abandoned_delay_hours=
 // Starts Shopify OAuth for the logged-in admin's account.
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -50,6 +51,17 @@ export async function GET(request: NextRequest) {
     const orderTemplateLanguage =
       (searchParams.get('template_language') ?? 'en').trim() || 'en';
 
+    const abandonedTemplateName = (
+      searchParams.get('abandoned_template_name') ?? ''
+    ).trim();
+    const abandonedTemplateLanguage =
+      (searchParams.get('abandoned_template_language') ?? 'en').trim() || 'en';
+
+    const delayRaw = Number(searchParams.get('abandoned_delay_hours') ?? '10');
+    const abandonedDelayHours = Number.isFinite(delayRaw)
+      ? Math.max(0, Math.min(168, Math.floor(delayRaw)))
+      : 10;
+
     const nonce = createOAuthNonce();
     const authorizeUrl = buildAuthorizeUrl(shop, nonce);
 
@@ -63,13 +75,16 @@ export async function GET(request: NextRequest) {
         shop,
         orderTemplateName,
         orderTemplateLanguage,
+        abandonedTemplateName,
+        abandonedTemplateLanguage,
+        abandonedDelayHours,
       }),
       {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
-        maxAge: 60 * 10, // 10 minutes
+        maxAge: 60 * 10,
       },
     );
 
