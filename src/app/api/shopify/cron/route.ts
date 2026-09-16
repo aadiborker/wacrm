@@ -1,5 +1,6 @@
-// GET /api/shopify/cron — send due abandoned-checkout WhatsApp reminders.
-// Auth: x-cron-secret === AUTOMATION_CRON_SECRET (same as other crons).
+// GET /api/shopify/cron — optional alias; preferred path is
+// GET /api/automations/cron (same secret), which also drains abandoned carts.
+// Kept so existing pingers keep working.
 
 import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';

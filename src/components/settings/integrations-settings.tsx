@@ -83,6 +83,8 @@ export function IntegrationsSettings() {
   const [shopifyConnecting, setShopifyConnecting] = useState(false);
   const [shopifyDisconnecting, setShopifyDisconnecting] = useState(false);
   const [shopifySaving, setShopifySaving] = useState(false);
+  const [shopifyProcessingAbandoned, setShopifyProcessingAbandoned] =
+    useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -204,6 +206,30 @@ export function IntegrationsSettings() {
       toast.error(t('networkError'));
     } finally {
       setShopifySaving(false);
+    }
+  }
+
+  async function handleProcessAbandonedNow() {
+    setShopifyProcessingAbandoned(true);
+    try {
+      const res = await fetch('/api/account/shopify/process-abandoned', {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || t('shopifyProcessAbandonedFailed'));
+        return;
+      }
+      const sent = typeof data.sent === 'number' ? data.sent : 0;
+      const skipped = typeof data.skipped === 'number' ? data.skipped : 0;
+      toast.success(
+        t('shopifyProcessAbandonedSuccess', { sent, skipped }),
+      );
+    } catch (err) {
+      console.error('[IntegrationsSettings] process abandoned:', err);
+      toast.error(t('networkError'));
+    } finally {
+      setShopifyProcessingAbandoned(false);
     }
   }
 
@@ -379,6 +405,18 @@ export function IntegrationsSettings() {
                     </Button>
                     <Button
                       variant="outline"
+                      onClick={() => void handleProcessAbandonedNow()}
+                      disabled={shopifyProcessingAbandoned}
+                    >
+                      {shopifyProcessingAbandoned ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : null}
+                      {shopifyProcessingAbandoned
+                        ? t('shopifyProcessAbandonedRunning')
+                        : t('shopifyProcessAbandoned')}
+                    </Button>
+                    <Button
+                      variant="outline"
                       size="default"
                       onClick={() => void handleDisconnectShopify()}
                       disabled={shopifyDisconnecting}
@@ -396,6 +434,9 @@ export function IntegrationsSettings() {
                   </div>
                   <p className="text-muted-foreground text-xs">
                     {t('shopifyReconnectHint')}
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    {t('shopifyCronHint')}
                   </p>
                 </div>
               </RequireRole>

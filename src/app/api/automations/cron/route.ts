@@ -3,12 +3,16 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { resumePendingExecution } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
+import { processDueAbandonedCheckouts } from '@/lib/shopify/abandoned'
 
 /**
  * Drain due `automation_pending_executions` rows. Meant to be hit
  * on a schedule (Vercel Cron / external pinger) — requires a shared
  * secret via the `x-cron-secret` header to match
  * `AUTOMATION_CRON_SECRET`.
+ *
+ * Also drains due Shopify abandoned-checkout WhatsApp reminders so
+ * operators don't need a separate /api/shopify/cron job.
  *
  * The claim step (status = 'running') serves as a simple lock so
  * overlapping invocations don't double-process rows. Best-effort
@@ -40,10 +44,9 @@ export async function GET(request: Request) {
     .limit(50)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!due || due.length === 0) return NextResponse.json({ processed: 0 })
 
   let processed = 0
-  for (const row of due) {
+  for (const row of due ?? []) {
     const { data: claim } = await admin
       .from('automation_pending_executions')
       .update({ status: 'running' })
@@ -70,5 +73,15 @@ export async function GET(request: Request) {
     processed++
   }
 
-  return NextResponse.json({ processed })
+  let abandoned = { processed: 0, sent: 0, skipped: 0 }
+  try {
+    abandoned = await processDueAbandonedCheckouts(admin, 25)
+  } catch (err) {
+    console.error('[automations/cron] abandoned checkouts:', err)
+  }
+
+  return NextResponse.json({
+    processed,
+    abandoned,
+  })
 }

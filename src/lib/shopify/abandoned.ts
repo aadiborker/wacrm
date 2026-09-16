@@ -141,9 +141,10 @@ export async function cancelAbandonedForOrder(
 export async function processDueAbandonedCheckouts(
   db: SupabaseClient,
   limit = 25,
+  accountId?: string,
 ): Promise<{ processed: number; sent: number; skipped: number }> {
   const now = new Date().toISOString();
-  const { data: due, error } = await db
+  let query = db
     .from('shopify_abandoned_checkouts')
     .select(
       'id, account_id, shop_domain, phone, customer_name, checkout_url, status',
@@ -152,6 +153,12 @@ export async function processDueAbandonedCheckouts(
     .lte('remind_at', now)
     .order('remind_at', { ascending: true })
     .limit(limit);
+
+  if (accountId) {
+    query = query.eq('account_id', accountId);
+  }
+
+  const { data: due, error } = await query;
 
   if (error) {
     console.error('[shopify/cron] list due:', error);
