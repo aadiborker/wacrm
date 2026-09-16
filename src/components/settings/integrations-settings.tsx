@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   Copy,
@@ -37,6 +38,17 @@ import {
 import type { ApiWebhookEndpoint } from '@/lib/webhooks/endpoints';
 import { SettingsPanelHead } from './settings-panel-head';
 
+type ShopifyConnection = {
+  id: string;
+  shop_domain: string;
+  scope: string | null;
+  order_template_name: string | null;
+  order_template_language: string;
+  webhook_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
     year: 'numeric',
@@ -48,22 +60,56 @@ function fmtDate(iso: string): string {
 export function IntegrationsSettings() {
   const { canEditSettings } = useAuth();
   const t = useTranslations('Settings.integrations');
+  const searchParams = useSearchParams();
 
   const [webhooks, setWebhooks] = useState<ApiWebhookEndpoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  const [shopifyConfigured, setShopifyConfigured] = useState(false);
+  const [shopifyConnection, setShopifyConnection] =
+    useState<ShopifyConnection | null>(null);
+  const [shopDomain, setShopDomain] = useState('');
+  const [templateName, setTemplateName] = useState('');
+  const [templateLanguage, setTemplateLanguage] = useState('en');
+  const [shopifyConnecting, setShopifyConnecting] = useState(false);
+  const [shopifyDisconnecting, setShopifyDisconnecting] = useState(false);
+
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/account/webhooks', { cache: 'no-store' });
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+      const [webhooksRes, shopifyRes] = await Promise.all([
+        fetch('/api/account/webhooks', { cache: 'no-store' }),
+        fetch('/api/account/shopify', { cache: 'no-store' }),
+      ]);
+
+      if (!webhooksRes.ok) {
+        const payload = await webhooksRes.json().catch(() => ({}));
         toast.error(payload.error || t('loadFailed'));
-        return;
+      } else {
+        const data = (await webhooksRes.json()) as {
+          webhooks: ApiWebhookEndpoint[];
+        };
+        setWebhooks(data.webhooks);
       }
-      const data = (await res.json()) as { webhooks: ApiWebhookEndpoint[] };
-      setWebhooks(data.webhooks);
+
+      if (!shopifyRes.ok) {
+        const payload = await shopifyRes.json().catch(() => ({}));
+        toast.error(payload.error || t('shopifyLoadFailed'));
+      } else {
+        const data = (await shopifyRes.json()) as {
+          configured: boolean;
+          connection: ShopifyConnection | null;
+        };
+        setShopifyConfigured(data.configured);
+        setShopifyConnection(data.connection);
+        if (data.connection?.order_template_name) {
+          setTemplateName(data.connection.order_template_name);
+        }
+        if (data.connection?.order_template_language) {
+          setTemplateLanguage(data.connection.order_template_language);
+        }
+      }
     } catch (err) {
       console.error('[IntegrationsSettings] load error:', err);
       toast.error(t('networkError'));
@@ -75,6 +121,56 @@ export function IntegrationsSettings() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const status = searchParams.get('shopify');
+    if (!status) return;
+    if (status === 'connected') {
+      toast.success(t('shopifyConnectSuccess'));
+      void load();
+    } else if (status === 'error') {
+      toast.error(t('shopifyConnectFailed'));
+    }
+  }, [searchParams, t, load]);
+
+  function handleConnectShopify() {
+    const shop = shopDomain.trim();
+    if (!shop) {
+      toast.error(t('shopifyShopRequired'));
+      return;
+    }
+    const tmpl = templateName.trim();
+    if (!tmpl) {
+      toast.error(t('shopifyTemplateRequired'));
+      return;
+    }
+    setShopifyConnecting(true);
+    const params = new URLSearchParams({
+      shop,
+      template_name: tmpl,
+      template_language: templateLanguage.trim() || 'en',
+    });
+    window.location.href = `/api/shopify/install?${params.toString()}`;
+  }
+
+  async function handleDisconnectShopify() {
+    setShopifyDisconnecting(true);
+    try {
+      const res = await fetch('/api/account/shopify', { method: 'DELETE' });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || t('shopifyDisconnectFailed'));
+        return;
+      }
+      toast.success(t('shopifyDisconnectSuccess'));
+      setShopifyConnection(null);
+    } catch (err) {
+      console.error('[IntegrationsSettings] shopify disconnect:', err);
+      toast.error(t('networkError'));
+    } finally {
+      setShopifyDisconnecting(false);
+    }
+  }
 
   async function handleDelete(endpoint: ApiWebhookEndpoint) {
     setDeleting(endpoint.id);
@@ -152,6 +248,107 @@ export function IntegrationsSettings() {
               {t('openApiKeys')}
             </Link>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="space-y-4 p-4">
+          <div>
+            <h3 className="text-sm font-medium text-foreground">
+              {t('shopifyTitle')}
+            </h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              {t('shopifyDesc')}
+            </p>
+          </div>
+
+          {!shopifyConfigured ? (
+            <p className="text-sm text-muted-foreground">
+              {t('shopifyNotConfigured')}
+            </p>
+          ) : shopifyConnection ? (
+            <div className="space-y-3">
+              <p className="text-sm text-foreground">
+                {t('shopifyConnected', { shop: shopifyConnection.shop_domain })}
+              </p>
+              {shopifyConnection.order_template_name ? (
+                <p className="text-muted-foreground text-xs">
+                  {t('shopifyTemplate', {
+                    name: shopifyConnection.order_template_name,
+                    lang: shopifyConnection.order_template_language,
+                  })}
+                </p>
+              ) : null}
+              <RequireRole min="admin">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleDisconnectShopify()}
+                  disabled={shopifyDisconnecting}
+                  className="border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60 hover:bg-red-500/20 hover:text-red-200"
+                >
+                  {shopifyDisconnecting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
+                  {shopifyDisconnecting
+                    ? t('shopifyDisconnecting')
+                    : t('shopifyDisconnect')}
+                </Button>
+              </RequireRole>
+            </div>
+          ) : (
+            <RequireRole min="admin">
+              <div className="space-y-3 max-w-md">
+                <div className="space-y-2">
+                  <Label htmlFor="shopify-shop">{t('shopifyShopLabel')}</Label>
+                  <Input
+                    id="shopify-shop"
+                    placeholder={t('shopifyShopPlaceholder')}
+                    value={shopDomain}
+                    onChange={(e) => setShopDomain(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="shopify-template">
+                    {t('shopifyTemplateLabel')}
+                  </Label>
+                  <Input
+                    id="shopify-template"
+                    placeholder={t('shopifyTemplatePlaceholder')}
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    {t('shopifyTemplateHint')}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="shopify-lang">
+                    {t('shopifyLanguageLabel')}
+                  </Label>
+                  <Input
+                    id="shopify-lang"
+                    placeholder={t('shopifyLanguagePlaceholder')}
+                    value={templateLanguage}
+                    onChange={(e) => setTemplateLanguage(e.target.value)}
+                  />
+                </div>
+                <Button
+                  onClick={handleConnectShopify}
+                  disabled={shopifyConnecting || !canEditSettings}
+                >
+                  {shopifyConnecting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : null}
+                  {shopifyConnecting
+                    ? t('shopifyConnecting')
+                    : t('shopifyConnect')}
+                </Button>
+              </div>
+            </RequireRole>
+          )}
         </CardContent>
       </Card>
 
