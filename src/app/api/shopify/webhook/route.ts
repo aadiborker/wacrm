@@ -44,9 +44,7 @@ export async function POST(request: Request) {
     const db = supabaseAdmin();
     const { data: connection, error: connErr } = await db
       .from('shopify_connections')
-      .select(
-        'account_id, order_template_name, order_template_language',
-      )
+      .select('account_id, order_template_name, order_template_language')
       .eq('shop_domain', shop)
       .maybeSingle();
 
@@ -68,6 +66,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
 
+    const shopifyOrderId =
+      order.id != null ? String(order.id) : extractOrderNumber(order);
+
+    // Claim this order once — second delivery (duplicate webhook / retry) skips send.
+    const accountId = connection.account_id as string;
+    const { error: claimErr } = await db.from('shopify_order_events').insert({
+      account_id: accountId,
+      shop_domain: shop,
+      shopify_order_id: shopifyOrderId,
+      topic: 'orders/create',
+    });
+
+    if (claimErr) {
+      // Unique violation = already processed.
+      if (claimErr.code === '23505') {
+        console.info(
+          `[shopify/webhook] duplicate order ${shopifyOrderId} for ${shop} — skip`,
+        );
+        return NextResponse.json({ ok: true, skipped: 'duplicate' });
+      }
+      console.error('[shopify/webhook] claim error:', claimErr);
+      return NextResponse.json({ error: 'Internal error' }, { status: 500 });
+    }
+
     const phone = extractOrderPhone(order);
     if (!phone) {
       console.warn(
@@ -76,7 +98,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, skipped: 'no_phone' });
     }
 
-    const accountId = connection.account_id as string;
     const name = extractOrderCustomerName(order);
     const orderNumber = extractOrderNumber(order);
     const firstName =
@@ -96,7 +117,6 @@ export async function POST(request: Request) {
       templateName,
       templateLanguage:
         (connection.order_template_language as string) || 'en',
-      // Positional body params — template should use {{1}} order, {{2}} name.
       templateParams: [orderNumber, firstName],
     });
 
