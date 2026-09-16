@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   Copy,
@@ -64,6 +64,7 @@ export function IntegrationsSettings() {
   const { canEditSettings } = useAuth();
   const t = useTranslations('Settings.integrations');
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [webhooks, setWebhooks] = useState<ApiWebhookEndpoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,7 +153,9 @@ export function IntegrationsSettings() {
     } else if (status === 'error') {
       toast.error(t('shopifyConnectFailed'));
     }
-  }, [searchParams, t, load]);
+    // Drop OAuth query flags so Settings rail navigation stays clean.
+    router.replace('/settings?tab=integrations', { scroll: false });
+  }, [searchParams, t, load, router]);
 
   function handleConnectShopify() {
     const shop = shopDomain.trim();
