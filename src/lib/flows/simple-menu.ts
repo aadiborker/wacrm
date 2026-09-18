@@ -11,6 +11,11 @@
  */
 
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
+import {
+  composeProductMessage,
+  isHttpsUrl,
+  splitBuyUrlFromMessage,
+} from "./product-message";
 import type {
   HandoffNodeConfig,
   KeywordTriggerConfig,
@@ -103,15 +108,6 @@ function slugReplyId(prefix: string, title: string, index: number): string {
   return `${prefix}_${index}_${base || "opt"}`.slice(0, 200);
 }
 
-function isHttpsUrl(value: string): boolean {
-  try {
-    const u = new URL(value);
-    return u.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 function validateProductExtras(
   item: { messageText?: string; imageUrl?: string; buyUrl?: string; title?: string },
   fieldPrefix: string,
@@ -140,23 +136,6 @@ function validateProductExtras(
       message: `${label}: buy link must start with https://`,
     });
   }
-}
-
-function composeProductMessage(item: {
-  title: string;
-  messageText?: string;
-  buyUrl?: string;
-}): string {
-  const parts: string[] = [];
-  const msg = trim(item.messageText);
-  if (msg) parts.push(msg);
-  else if (trim(item.title)) parts.push(trim(item.title));
-
-  const buyUrl = trim(item.buyUrl);
-  if (buyUrl) {
-    parts.push(`Buy now:\n${buyUrl}`);
-  }
-  return parts.join("\n\n").slice(0, BODY_MAX);
 }
 
 function validateLeaves(
@@ -356,7 +335,11 @@ function emitMessageLeaf(
   keyBase: string,
 ): string {
   const hk = `handoff_${keyBase}`;
-  const body = composeProductMessage(item);
+  const body = composeProductMessage({
+    messageText: item.messageText,
+    buyUrl: item.buyUrl,
+    titleFallback: item.title,
+  });
   const imageUrl = trim(item.imageUrl);
   const note = trim(item.handoffNote) || `Follow-up after: ${trim(item.title)}`;
 
@@ -684,20 +667,6 @@ function listRows(config: Record<string, unknown>): Array<{
     }
   }
   return rows;
-}
-
-/** Split "Buy now:\\nhttps://..." trailer back into message + buyUrl. */
-function splitBuyUrlFromMessage(text: string): {
-  messageText: string;
-  buyUrl?: string;
-} {
-  const marker = /\n\nBuy now:\n(https:\/\/\S+)\s*$/i;
-  const match = text.match(marker);
-  if (!match) return { messageText: text };
-  return {
-    messageText: text.slice(0, match.index).trim(),
-    buyUrl: match[1],
-  };
 }
 
 function inferChoice(

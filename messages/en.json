@@ -1343,7 +1343,19 @@
       "noNodeDesc": "Select a node on the canvas to edit its configuration.",
       "form": {
         "advancesTo": "Advances to",
-        "textToCustomer": "Text sent to the customer",
+        "textToCustomer": "Product / message text",
+        "productExtrasHint": "Optional: add a product photo and/or ecommerce buy link. Customers tap the link in WhatsApp to open your store.",
+        "productImageLabel": "Product image (optional)",
+        "uploadProductImage": "Upload image",
+        "replaceProductImage": "Replace image",
+        "removeProductImage": "Remove",
+        "productImageUploading": "Uploading…",
+        "productImageUploaded": "Image uploaded",
+        "productImageFailed": "Image upload failed",
+        "orPasteImageUrl": "Or paste a public https:// image URL",
+        "buyUrlLabel": "Buy now link (optional)",
+        "buyUrlPlaceholder": "https://your-shop.com/products/…",
+        "buyUrlHint": "Must be https:// — appended under “Buy now:” in the WhatsApp message.",
         "promptToCustomer": "Prompt sent to the customer",
         "varKeyLabel": "Variable key (stored in flow_runs.vars; alphanumeric + underscore)",
         "varKeyPlaceholder": "e.g. name, email, company",
@@ -1414,7 +1426,7 @@
         },
         "send_message": {
           "label": "Send message",
-          "blurb": "Sends a WhatsApp text message"
+          "blurb": "Text, optional product image, and buy link"
         },
         "send_buttons": {
           "label": "Send buttons",
@@ -1473,6 +1485,8 @@
       "video": "Video",
       "document": "Document",
       "audio": "Audio",
+      "withImage": "image",
+      "withBuyLink": "buy link",
       "hasTag": "has tag {tag}",
       "opContains": "contains",
       "opExists": "exists",

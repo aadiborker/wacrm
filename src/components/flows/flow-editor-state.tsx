@@ -145,7 +145,7 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
     case "start":
       return { next_node_key: "" };
     case "send_message":
-      return { text: "", next_node_key: "" };
+      return { text: "", image_url: "", buy_url: "", next_node_key: "" };
     case "send_buttons":
       return {
         text: "",

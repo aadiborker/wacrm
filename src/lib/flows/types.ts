@@ -30,6 +30,16 @@ export interface StartNodeConfig {
 export interface SendMessageNodeConfig {
   /** Plain text sent to the customer; can interpolate {{vars.X}}. */
   text: string;
+  /**
+   * Optional product image (public HTTPS URL). Sent as a separate
+   * image message before the text. Same pattern as Simple Menu.
+   */
+  image_url?: string;
+  /**
+   * Optional ecommerce HTTPS link. Appended under a “Buy now:” line
+   * in the text bubble (session messages have no CTA URL buttons).
+   */
+  buy_url?: string;
   /** Auto-advance target after the message lands at Meta. */
   next_node_key: string;
 }

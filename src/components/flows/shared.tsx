@@ -107,7 +107,7 @@ export const NODE_META: Record<
     label: 'Send message',
     icon: MessageCircle,
     color: 'text-sky-400',
-    blurb: 'Sends a WhatsApp text message',
+    blurb: 'Text, optional product image, and buy link',
     category: 'messaging',
   },
   send_buttons: {
@@ -316,7 +316,13 @@ export function summarizeNode(
       return null;
     case 'send_message': {
       const text = typeof cfg.text === 'string' ? cfg.text : '';
-      return text.length > 0 ? truncate(text) : null;
+      const imageUrl = typeof cfg.image_url === 'string' ? cfg.image_url : '';
+      const buyUrl = typeof cfg.buy_url === 'string' ? cfg.buy_url : '';
+      const bits: string[] = [];
+      if (text.length > 0) bits.push(truncate(text, 50));
+      if (imageUrl) bits.push(t ? t('withImage') : 'image');
+      if (buyUrl) bits.push(t ? t('withBuyLink') : 'buy link');
+      return bits.length > 0 ? bits.join(' · ') : null;
     }
     case 'send_buttons': {
       const text = typeof cfg.text === 'string' ? cfg.text : '';

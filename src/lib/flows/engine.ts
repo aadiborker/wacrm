@@ -39,6 +39,7 @@ import {
   engineSendMedia,
   engineSendText,
 } from "./meta-send";
+import { composeProductMessage } from "./product-message";
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 import { removeContactTag } from "@/lib/contacts/tag-write";
@@ -599,18 +600,46 @@ async function advanceFromNodeKey(
     }
     if (node.node_type === "send_message") {
       const cfg = node.config as unknown as SendMessageNodeConfig;
+      const textPart = interpolateVars(cfg.text ?? "", run.vars);
+      const buyUrl = cfg.buy_url
+        ? interpolateVars(cfg.buy_url, run.vars).trim()
+        : "";
+      const imageUrl = cfg.image_url
+        ? interpolateVars(cfg.image_url, run.vars).trim()
+        : "";
+      const body = composeProductMessage({
+        messageText: textPart,
+        buyUrl: buyUrl || undefined,
+      });
       try {
-        const { whatsapp_message_id } = await engineSendText({
-          accountId: run.account_id,
-    userId: run.user_id,
-          conversationId: run.conversation_id!,
-          contactId: run.contact_id!,
-          text: interpolateVars(cfg.text, run.vars),
-        });
-        await logEvent(db, run.id, "message_sent", node.node_key, {
-          node_type: "send_message",
-          whatsapp_message_id,
-        });
+        if (imageUrl) {
+          const { whatsapp_message_id } = await engineSendMedia({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            kind: "image",
+            link: imageUrl,
+          });
+          await logEvent(db, run.id, "message_sent", node.node_key, {
+            node_type: "send_message",
+            media: "image",
+            whatsapp_message_id,
+          });
+        }
+        if (body) {
+          const { whatsapp_message_id } = await engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text: body,
+          });
+          await logEvent(db, run.id, "message_sent", node.node_key, {
+            node_type: "send_message",
+            whatsapp_message_id,
+          });
+        }
       } catch (err) {
         await logEvent(db, run.id, "error", node.node_key, {
           reason: "send_text_failed",

@@ -24,6 +24,7 @@
  */
 
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
+import { isHttpsUrl } from "./product-message";
 
 export interface ValidationIssue {
   severity: "error" | "warning";
@@ -212,14 +213,41 @@ function validateNode(
     }
 
     case "send_message": {
-      const cfg = node.config as { text?: string; next_node_key?: string };
-      if (!cfg.text?.trim()) {
+      const cfg = node.config as {
+        text?: string;
+        image_url?: string;
+        buy_url?: string;
+        next_node_key?: string;
+      };
+      const text = cfg.text?.trim() ?? "";
+      const imageUrl = cfg.image_url?.trim() ?? "";
+      const buyUrl = cfg.buy_url?.trim() ?? "";
+      if (!text && !imageUrl && !buyUrl) {
         issues.push({
           severity: "error",
           scope: "node",
           node_key: node.node_key,
           field: "text",
-          message: "Send-message node needs a text body.",
+          message:
+            "Send-message node needs text, a product image, or a buy link.",
+        });
+      }
+      if (imageUrl && !isHttpsUrl(imageUrl)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "image_url",
+          message: "Product image URL must start with https://",
+        });
+      }
+      if (buyUrl && !isHttpsUrl(buyUrl)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "buy_url",
+          message: "Buy link must start with https://",
         });
       }
       if (!cfg.next_node_key) {

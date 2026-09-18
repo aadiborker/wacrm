@@ -26,6 +26,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ImagePlus,
   Loader2,
   Paperclip,
   Plus,
@@ -46,7 +47,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { uploadAccountMedia, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media";
+import {
+  uploadAccountMedia,
+  MEDIA_MAX_BYTES,
+  MEDIA_MAX_BYTES_BY_KIND,
+} from "@/lib/storage/upload-media";
 import { slugify, type BuilderNode } from "../shared";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
 
@@ -79,20 +84,13 @@ export function NodeConfigForm({
 
     case "send_message":
       return (
-        <>
-          <TextRow
-            label={t("textToCustomer")}
-            value={(cfg as { text?: string }).text ?? ""}
-            onChange={(v) => onUpdateConfig({ text: v })}
-          />
-          <NextNodeRow
-            value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
-            allNodes={allNodes}
-            currentKey={node.node_key}
-            onChange={(v) => onUpdateConfig({ next_node_key: v })}
-            label={t("advancesTo")}
-          />
-        </>
+        <SendMessageForm
+          cfg={cfg as SendMessageCfg}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
+        />
       );
 
     case "send_buttons":
@@ -863,6 +861,173 @@ function useUserTags(): UserTag[] {
 }
 
 // ============================================================
+// send_message (text + optional product image + buy link)
+// ============================================================
+
+const FLOW_MEDIA_BUCKET = "flow-media";
+
+interface SendMessageCfg {
+  text?: string;
+  image_url?: string;
+  buy_url?: string;
+  next_node_key?: string;
+}
+
+const PRODUCT_IMAGE_ACCEPT = "image/png,image/jpeg,image/webp";
+
+function SendMessageForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: SendMessageCfg;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const imageUrl = cfg.image_url ?? "";
+
+  const handleFile = useCallback(
+    async (file: File) => {
+      const max = MEDIA_MAX_BYTES_BY_KIND.image;
+      if (file.size > max) {
+        toast.error(
+          `Image is ${(file.size / 1024 / 1024).toFixed(1)} MB — WhatsApp limit is 5 MB.`,
+        );
+        return;
+      }
+      setUploading(true);
+      try {
+        const { publicUrl } = await uploadAccountMedia(FLOW_MEDIA_BUCKET, file);
+        onUpdateConfig({ image_url: publicUrl });
+        toast.success(t("productImageUploaded"));
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : t("productImageFailed"),
+        );
+      } finally {
+        setUploading(false);
+      }
+    },
+    [onUpdateConfig, t],
+  );
+
+  return (
+    <>
+      <TextRow
+        label={t("textToCustomer")}
+        value={cfg.text ?? ""}
+        onChange={(v) => onUpdateConfig({ text: v })}
+      />
+      <p className="text-muted-foreground -mt-1 text-xs">
+        {t("productExtrasHint")}
+      </p>
+
+      <div className="space-y-2">
+        <label className="block text-xs text-muted-foreground">
+          {t("productImageLabel")}
+        </label>
+        {imageUrl ? (
+          <div className="flex items-start gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt=""
+              className="h-20 w-20 rounded-md border border-border object-cover"
+            />
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ImagePlus className="h-3.5 w-3.5" />
+                )}
+                {t("replaceProductImage")}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onUpdateConfig({ image_url: "" })}
+              >
+                {t("removeProductImage")}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ImagePlus className="h-3.5 w-3.5" />
+            )}
+            {uploading ? t("productImageUploading") : t("uploadProductImage")}
+          </Button>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept={PRODUCT_IMAGE_ACCEPT}
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void handleFile(file);
+          }}
+        />
+        <p className="text-[11px] text-muted-foreground">
+          {t("orPasteImageUrl")}
+        </p>
+        <Input
+          value={imageUrl}
+          onChange={(e) => onUpdateConfig({ image_url: e.target.value })}
+          placeholder={t("mediaUrlPlaceholder")}
+          className="bg-muted text-xs"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="block text-xs text-muted-foreground">
+          {t("buyUrlLabel")}
+        </label>
+        <Input
+          value={cfg.buy_url ?? ""}
+          onChange={(e) => onUpdateConfig({ buy_url: e.target.value })}
+          placeholder={t("buyUrlPlaceholder")}
+          className="bg-muted"
+        />
+        <p className="text-muted-foreground text-xs">{t("buyUrlHint")}</p>
+      </div>
+
+      <NextNodeRow
+        value={cfg.next_node_key ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(v) => onUpdateConfig({ next_node_key: v })}
+        label={t("advancesTo")}
+      />
+    </>
+  );
+}
+
+// ============================================================
 // send_media
 // ============================================================
 
@@ -884,8 +1049,6 @@ const MEDIA_ACCEPT: Record<NonNullable<SendMediaCfg["media_type"]>, string> = {
   document:
     "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain",
 };
-
-const FLOW_MEDIA_BUCKET = "flow-media";
 
 function SendMediaForm({
   cfg,
