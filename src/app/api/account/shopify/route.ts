@@ -12,8 +12,33 @@ import { isShopifyConfigured } from '@/lib/shopify/config';
 import { registerShopifyWebhooks } from '@/lib/shopify/webhooks';
 import { decrypt } from '@/lib/whatsapp/encryption';
 
-const PUBLIC_COLUMNS =
-  'id, shop_domain, scope, order_template_name, order_template_language, abandoned_template_name, abandoned_template_language, abandoned_delay_hours, webhook_id, created_at, updated_at';
+const PUBLIC_COLUMNS = [
+  'id',
+  'shop_domain',
+  'scope',
+  'order_template_name',
+  'order_template_language',
+  'abandoned_template_name',
+  'abandoned_template_language',
+  'abandoned_delay_hours',
+  'shipped_template_name',
+  'out_for_delivery_template_name',
+  'delivered_template_name',
+  'cancelled_template_name',
+  'payment_failed_template_name',
+  'webhook_id',
+  'created_at',
+  'updated_at',
+].join(', ');
+
+const OPTIONAL_TEMPLATE_FIELDS = [
+  'abandoned_template_name',
+  'shipped_template_name',
+  'out_for_delivery_template_name',
+  'delivered_template_name',
+  'cancelled_template_name',
+  'payment_failed_template_name',
+] as const;
 
 export async function GET() {
   try {
@@ -74,10 +99,6 @@ export async function PATCH(request: Request) {
       }
       patch.order_template_language = lang;
     }
-    if (typeof body?.abandoned_template_name === 'string') {
-      const name = body.abandoned_template_name.trim();
-      patch.abandoned_template_name = name || null;
-    }
     if (typeof body?.abandoned_template_language === 'string') {
       const lang = body.abandoned_template_language.trim();
       if (!lang) {
@@ -109,6 +130,13 @@ export async function PATCH(request: Request) {
         );
       }
       patch.abandoned_delay_hours = hours;
+    }
+
+    for (const field of OPTIONAL_TEMPLATE_FIELDS) {
+      if (typeof body?.[field] === 'string') {
+        const name = body[field].trim();
+        patch[field] = name || null;
+      }
     }
 
     const reregisterWebhooks = body?.reregister_webhooks === true;

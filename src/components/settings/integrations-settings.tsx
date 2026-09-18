@@ -47,6 +47,11 @@ type ShopifyConnection = {
   abandoned_template_name: string | null;
   abandoned_template_language: string;
   abandoned_delay_hours: number;
+  shipped_template_name: string | null;
+  out_for_delivery_template_name: string | null;
+  delivered_template_name: string | null;
+  cancelled_template_name: string | null;
+  payment_failed_template_name: string | null;
   webhook_id: string | null;
   created_at: string;
   updated_at: string;
@@ -81,6 +86,15 @@ export function IntegrationsSettings() {
   const [abandonedTemplateLanguage, setAbandonedTemplateLanguage] =
     useState('en');
   const [abandonedDelayHours, setAbandonedDelayHours] = useState('10');
+  const [shippedTemplateName, setShippedTemplateName] = useState('order_shipped');
+  const [outForDeliveryTemplateName, setOutForDeliveryTemplateName] =
+    useState('out_for_delivery');
+  const [deliveredTemplateName, setDeliveredTemplateName] =
+    useState('order_delivered');
+  const [cancelledTemplateName, setCancelledTemplateName] =
+    useState('order_cancelled');
+  const [paymentFailedTemplateName, setPaymentFailedTemplateName] =
+    useState('payment_failed');
   const [shopifyConnecting, setShopifyConnecting] = useState(false);
   const [shopifyDisconnecting, setShopifyDisconnecting] = useState(false);
   const [shopifySaving, setShopifySaving] = useState(false);
@@ -130,6 +144,25 @@ export function IntegrationsSettings() {
         }
         if (typeof data.connection?.abandoned_delay_hours === 'number') {
           setAbandonedDelayHours(String(data.connection.abandoned_delay_hours));
+        }
+        if (data.connection?.shipped_template_name) {
+          setShippedTemplateName(data.connection.shipped_template_name);
+        }
+        if (data.connection?.out_for_delivery_template_name) {
+          setOutForDeliveryTemplateName(
+            data.connection.out_for_delivery_template_name,
+          );
+        }
+        if (data.connection?.delivered_template_name) {
+          setDeliveredTemplateName(data.connection.delivered_template_name);
+        }
+        if (data.connection?.cancelled_template_name) {
+          setCancelledTemplateName(data.connection.cancelled_template_name);
+        }
+        if (data.connection?.payment_failed_template_name) {
+          setPaymentFailedTemplateName(
+            data.connection.payment_failed_template_name,
+          );
         }
       }
     } catch (err) {
@@ -194,6 +227,11 @@ export function IntegrationsSettings() {
           abandoned_template_language:
             abandonedTemplateLanguage.trim() || 'en',
           abandoned_delay_hours: Number.isFinite(delay) ? delay : 10,
+          shipped_template_name: shippedTemplateName.trim(),
+          out_for_delivery_template_name: outForDeliveryTemplateName.trim(),
+          delivered_template_name: deliveredTemplateName.trim(),
+          cancelled_template_name: cancelledTemplateName.trim(),
+          payment_failed_template_name: paymentFailedTemplateName.trim(),
           reregister_webhooks: true,
         }),
       });
@@ -394,6 +432,68 @@ export function IntegrationsSettings() {
                     />
                     <p className="text-muted-foreground text-xs">
                       {t('shopifyAbandonedDelayHint')}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="shopify-shipped">
+                      {t('shopifyShippedTemplateLabel')}
+                    </Label>
+                    <Input
+                      id="shopify-shipped"
+                      placeholder="order_shipped"
+                      value={shippedTemplateName}
+                      onChange={(e) => setShippedTemplateName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="shopify-ofd">
+                      {t('shopifyOutForDeliveryTemplateLabel')}
+                    </Label>
+                    <Input
+                      id="shopify-ofd"
+                      placeholder="out_for_delivery"
+                      value={outForDeliveryTemplateName}
+                      onChange={(e) =>
+                        setOutForDeliveryTemplateName(e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="shopify-delivered">
+                      {t('shopifyDeliveredTemplateLabel')}
+                    </Label>
+                    <Input
+                      id="shopify-delivered"
+                      placeholder="order_delivered"
+                      value={deliveredTemplateName}
+                      onChange={(e) => setDeliveredTemplateName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="shopify-cancelled">
+                      {t('shopifyCancelledTemplateLabel')}
+                    </Label>
+                    <Input
+                      id="shopify-cancelled"
+                      placeholder="order_cancelled"
+                      value={cancelledTemplateName}
+                      onChange={(e) => setCancelledTemplateName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="shopify-payfail">
+                      {t('shopifyPaymentFailedTemplateLabel')}
+                    </Label>
+                    <Input
+                      id="shopify-payfail"
+                      placeholder="payment_failed"
+                      value={paymentFailedTemplateName}
+                      onChange={(e) =>
+                        setPaymentFailedTemplateName(e.target.value)
+                      }
+                    />
+                    <p className="text-muted-foreground text-xs">
+                      {t('shopifyLifecycleTemplatesHint')}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">

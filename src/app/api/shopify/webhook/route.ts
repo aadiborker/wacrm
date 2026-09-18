@@ -1,4 +1,4 @@
-// POST /api/shopify/webhook — orders/create + checkouts/* → WhatsApp / schedule.
+// POST /api/shopify/webhook — Shopify order lifecycle → WhatsApp templates.
 
 import { NextResponse } from 'next/server';
 
@@ -10,16 +10,35 @@ import {
 import { isShopifyConfigured } from '@/lib/shopify/config';
 import { verifyShopifyWebhookHmac } from '@/lib/shopify/hmac';
 import {
+  claimShopifyEvent,
+  extractTrackingUrl,
+  firstNameFrom,
+  resolveOrderContact,
+  sendLifecycleTemplate,
+  SendMessageError,
+} from '@/lib/shopify/lifecycle';
+import {
   extractOrderCustomerName,
   extractOrderNumber,
   extractOrderPhone,
 } from '@/lib/shopify/order';
 import { normalizeShopDomain } from '@/lib/shopify/shop';
+import { decrypt } from '@/lib/whatsapp/encryption';
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation';
-import {
-  sendMessageToConversation,
-  SendMessageError,
-} from '@/lib/whatsapp/send-message';
+import { sendMessageToConversation } from '@/lib/whatsapp/send-message';
+
+const CONNECTION_SELECT = [
+  'account_id',
+  'access_token',
+  'order_template_name',
+  'order_template_language',
+  'abandoned_delay_hours',
+  'shipped_template_name',
+  'out_for_delivery_template_name',
+  'delivered_template_name',
+  'cancelled_template_name',
+  'payment_failed_template_name',
+].join(', ');
 
 export async function POST(request: Request) {
   try {
@@ -43,9 +62,7 @@ export async function POST(request: Request) {
     const db = supabaseAdmin();
     const { data: connection, error: connErr } = await db
       .from('shopify_connections')
-      .select(
-        'account_id, order_template_name, order_template_language, abandoned_delay_hours',
-      )
+      .select(CONNECTION_SELECT)
       .eq('shop_domain', shop)
       .maybeSingle();
 
@@ -55,6 +72,15 @@ export async function POST(request: Request) {
     }
 
     const accountId = connection.account_id as string;
+    const templateLanguage =
+      (connection.order_template_language as string) || 'en';
+    let accessToken = '';
+    try {
+      accessToken = decrypt(connection.access_token as string);
+    } catch (err) {
+      console.error('[shopify/webhook] decrypt token failed:', err);
+      return NextResponse.json({ ok: true, skipped: 'bad_token' });
+    }
 
     let payload: Record<string, unknown>;
     try {
@@ -77,82 +103,66 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, topic, ...result });
     }
 
-    if (topic !== 'orders/create') {
-      return NextResponse.json({ ok: true, ignored: topic });
+    if (topic === 'orders/create') {
+      return handleOrderCreate({
+        db,
+        connection,
+        accountId,
+        shop,
+        payload,
+        templateLanguage,
+      });
     }
 
-    const templateName = connection.order_template_name as string | null;
-    if (!templateName) {
-      console.warn(`[shopify/webhook] no template for shop ${shop}`);
-      return NextResponse.json({ ok: true, skipped: 'no_template' });
+    if (topic === 'orders/cancelled') {
+      return handleOrderCancelled({
+        db,
+        connection,
+        accountId,
+        shop,
+        payload,
+        templateLanguage,
+        accessToken,
+      });
     }
 
-    const shopifyOrderId =
-      payload.id != null ? String(payload.id) : extractOrderNumber(payload);
-
-    const { error: claimErr } = await db.from('shopify_order_events').insert({
-      account_id: accountId,
-      shop_domain: shop,
-      shopify_order_id: shopifyOrderId,
-      topic: 'orders/create',
-    });
-
-    if (claimErr) {
-      if (claimErr.code === '23505') {
-        console.info(
-          `[shopify/webhook] duplicate order ${shopifyOrderId} for ${shop} — skip`,
-        );
-        return NextResponse.json({ ok: true, skipped: 'duplicate' });
-      }
-      console.error('[shopify/webhook] claim error:', claimErr);
-      return NextResponse.json({ error: 'Internal error' }, { status: 500 });
+    if (topic === 'fulfillments/create') {
+      return handleFulfillmentCreated({
+        db,
+        connection,
+        accountId,
+        shop,
+        payload,
+        templateLanguage,
+        accessToken,
+      });
     }
 
-    const phone = extractOrderPhone(payload);
-    const email =
-      typeof payload.email === 'string' ? payload.email.trim() : null;
-
-    // Customer completed purchase — don't send abandoned reminder.
-    await cancelAbandonedForOrder(db, {
-      shopDomain: shop,
-      phone,
-      email,
-    });
-
-    if (!phone) {
-      console.warn(
-        `[shopify/webhook] order ${extractOrderNumber(payload)} has no phone`,
-      );
-      return NextResponse.json({ ok: true, skipped: 'no_phone' });
+    if (topic === 'fulfillment_events/create') {
+      return handleFulfillmentEvent({
+        db,
+        connection,
+        accountId,
+        shop,
+        payload,
+        templateLanguage,
+        accessToken,
+      });
     }
 
-    const name = extractOrderCustomerName(payload);
-    const orderNumber = extractOrderNumber(payload);
-    const firstName =
-      name?.split(/\s+/)[0] ||
-      (typeof payload.email === 'string' ? payload.email : 'there');
+    if (topic === 'order_transactions/create') {
+      return handlePaymentFailed({
+        db,
+        connection,
+        accountId,
+        shop,
+        payload,
+        templateLanguage,
+        accessToken,
+      });
+    }
 
-    const resolved = await resolveConversationByPhone(
-      db,
-      accountId,
-      phone,
-      name,
-    );
-
-    await sendMessageToConversation(db, accountId, {
-      conversationId: resolved.conversationId,
-      messageType: 'template',
-      templateName,
-      templateLanguage:
-        (connection.order_template_language as string) || 'en',
-      templateParams: [orderNumber, firstName],
-    });
-
-    return NextResponse.json({
-      ok: true,
-      conversation_id: resolved.conversationId,
-      contact_created: resolved.contactCreated,
-    });
+    return NextResponse.json({ ok: true, ignored: topic });
   } catch (err) {
     if (err instanceof SendMessageError) {
       console.error(
@@ -167,4 +177,331 @@ export async function POST(request: Request) {
     console.error('[shopify/webhook]', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
+}
+
+type HandlerCtx = {
+  db: ReturnType<typeof supabaseAdmin>;
+  connection: Record<string, unknown>;
+  accountId: string;
+  shop: string;
+  payload: Record<string, unknown>;
+  templateLanguage: string;
+  accessToken?: string;
+};
+
+async function handleOrderCreate(ctx: HandlerCtx) {
+  const { db, connection, accountId, shop, payload, templateLanguage } = ctx;
+  const templateName = connection.order_template_name as string | null;
+  if (!templateName) {
+    return NextResponse.json({ ok: true, skipped: 'no_template' });
+  }
+
+  const shopifyOrderId =
+    payload.id != null ? String(payload.id) : extractOrderNumber(payload);
+
+  const claimed = await claimShopifyEvent(db, {
+    accountId,
+    shopDomain: shop,
+    topic: 'orders/create',
+    eventKey: shopifyOrderId,
+  });
+  if (!claimed) {
+    return NextResponse.json({ ok: true, skipped: 'duplicate' });
+  }
+
+  const phone = extractOrderPhone(payload);
+  const email =
+    typeof payload.email === 'string' ? payload.email.trim() : null;
+
+  await cancelAbandonedForOrder(db, { shopDomain: shop, phone, email });
+
+  if (!phone) {
+    return NextResponse.json({ ok: true, skipped: 'no_phone' });
+  }
+
+  const name = extractOrderCustomerName(payload);
+  const orderNumber = extractOrderNumber(payload);
+  const firstName = firstNameFrom(name, email);
+
+  const resolved = await resolveConversationByPhone(
+    db,
+    accountId,
+    phone,
+    name,
+  );
+  await sendMessageToConversation(db, accountId, {
+    conversationId: resolved.conversationId,
+    messageType: 'template',
+    templateName,
+    templateLanguage,
+    // Template: {{1}} order, {{2}} name
+    templateParams: [orderNumber, firstName],
+  });
+
+  return NextResponse.json({
+    ok: true,
+    conversation_id: resolved.conversationId,
+  });
+}
+
+async function handleOrderCancelled(ctx: HandlerCtx) {
+  const {
+    db,
+    connection,
+    accountId,
+    shop,
+    payload,
+    templateLanguage,
+    accessToken = '',
+  } = ctx;
+  const templateName = connection.cancelled_template_name as string | null;
+  if (!templateName) {
+    return NextResponse.json({ ok: true, skipped: 'no_template' });
+  }
+
+  const orderId = payload.id != null ? String(payload.id) : null;
+  if (!orderId) {
+    return NextResponse.json({ ok: true, skipped: 'no_order_id' });
+  }
+
+  const claimed = await claimShopifyEvent(db, {
+    accountId,
+    shopDomain: shop,
+    topic: 'orders/cancelled',
+    eventKey: orderId,
+  });
+  if (!claimed) {
+    return NextResponse.json({ ok: true, skipped: 'duplicate' });
+  }
+
+  const contact = await resolveOrderContact(
+    shop,
+    accessToken,
+    orderId,
+    payload,
+  );
+  if (!contact.phone) {
+    return NextResponse.json({ ok: true, skipped: 'no_phone' });
+  }
+
+  const result = await sendLifecycleTemplate(db, {
+    accountId,
+    templateName,
+    templateLanguage,
+    phone: contact.phone,
+    name: contact.name,
+    // {{1}} name, {{2}} order
+    templateParams: [firstNameFrom(contact.name), contact.orderNumber],
+  });
+
+  return NextResponse.json({ ok: true, ...result });
+}
+
+async function handleFulfillmentCreated(ctx: HandlerCtx) {
+  const {
+    db,
+    connection,
+    accountId,
+    shop,
+    payload,
+    templateLanguage,
+    accessToken = '',
+  } = ctx;
+  const templateName = connection.shipped_template_name as string | null;
+  if (!templateName) {
+    return NextResponse.json({ ok: true, skipped: 'no_template' });
+  }
+
+  const fulfillmentId =
+    payload.id != null ? String(payload.id) : null;
+  const orderId =
+    payload.order_id != null ? String(payload.order_id) : null;
+  if (!fulfillmentId) {
+    return NextResponse.json({ ok: true, skipped: 'no_fulfillment_id' });
+  }
+
+  const claimed = await claimShopifyEvent(db, {
+    accountId,
+    shopDomain: shop,
+    topic: 'fulfillments/create',
+    eventKey: fulfillmentId,
+  });
+  if (!claimed) {
+    return NextResponse.json({ ok: true, skipped: 'duplicate' });
+  }
+
+  const contact = await resolveOrderContact(
+    shop,
+    accessToken,
+    orderId,
+    null,
+  );
+  if (!contact.phone) {
+    return NextResponse.json({ ok: true, skipped: 'no_phone' });
+  }
+
+  const tracking = extractTrackingUrl(payload);
+  const result = await sendLifecycleTemplate(db, {
+    accountId,
+    templateName,
+    templateLanguage,
+    phone: contact.phone,
+    name: contact.name,
+    // {{1}} name, {{2}} order, {{3}} tracking
+    templateParams: [
+      firstNameFrom(contact.name),
+      contact.orderNumber,
+      tracking,
+    ],
+  });
+
+  return NextResponse.json({ ok: true, ...result });
+}
+
+async function handleFulfillmentEvent(ctx: HandlerCtx) {
+  const {
+    db,
+    connection,
+    accountId,
+    shop,
+    payload,
+    templateLanguage,
+    accessToken = '',
+  } = ctx;
+
+  const status =
+    typeof payload.status === 'string' ? payload.status.toLowerCase() : '';
+  let templateName: string | null = null;
+  let topicKey = '';
+
+  if (status === 'out_for_delivery') {
+    templateName = connection.out_for_delivery_template_name as string | null;
+    topicKey = 'fulfillment_events/out_for_delivery';
+  } else if (status === 'delivered') {
+    templateName = connection.delivered_template_name as string | null;
+    topicKey = 'fulfillment_events/delivered';
+  } else {
+    return NextResponse.json({ ok: true, skipped: 'status', status });
+  }
+
+  if (!templateName) {
+    return NextResponse.json({ ok: true, skipped: 'no_template' });
+  }
+
+  const eventId = payload.id != null ? String(payload.id) : null;
+  if (!eventId) {
+    return NextResponse.json({ ok: true, skipped: 'no_event_id' });
+  }
+
+  const claimed = await claimShopifyEvent(db, {
+    accountId,
+    shopDomain: shop,
+    topic: topicKey,
+    eventKey: eventId,
+  });
+  if (!claimed) {
+    return NextResponse.json({ ok: true, skipped: 'duplicate' });
+  }
+
+  const orderId =
+    payload.order_id != null ? String(payload.order_id) : null;
+  const contact = await resolveOrderContact(
+    shop,
+    accessToken,
+    orderId,
+    null,
+  );
+  if (!contact.phone) {
+    return NextResponse.json({ ok: true, skipped: 'no_phone' });
+  }
+
+  const result = await sendLifecycleTemplate(db, {
+    accountId,
+    templateName,
+    templateLanguage,
+    phone: contact.phone,
+    name: contact.name,
+    // {{1}} name, {{2}} order
+    templateParams: [firstNameFrom(contact.name), contact.orderNumber],
+  });
+
+  return NextResponse.json({ ok: true, status, ...result });
+}
+
+async function handlePaymentFailed(ctx: HandlerCtx) {
+  const {
+    db,
+    connection,
+    accountId,
+    shop,
+    payload,
+    templateLanguage,
+    accessToken = '',
+  } = ctx;
+
+  const status =
+    typeof payload.status === 'string' ? payload.status.toLowerCase() : '';
+  if (status !== 'failure' && status !== 'error') {
+    return NextResponse.json({ ok: true, skipped: 'not_failed', status });
+  }
+
+  const templateName = connection.payment_failed_template_name as
+    | string
+    | null;
+  if (!templateName) {
+    return NextResponse.json({ ok: true, skipped: 'no_template' });
+  }
+
+  const txnId = payload.id != null ? String(payload.id) : null;
+  if (!txnId) {
+    return NextResponse.json({ ok: true, skipped: 'no_txn_id' });
+  }
+
+  const claimed = await claimShopifyEvent(db, {
+    accountId,
+    shopDomain: shop,
+    topic: 'order_transactions/failure',
+    eventKey: txnId,
+  });
+  if (!claimed) {
+    return NextResponse.json({ ok: true, skipped: 'duplicate' });
+  }
+
+  const orderId =
+    payload.order_id != null ? String(payload.order_id) : null;
+  const contact = await resolveOrderContact(
+    shop,
+    accessToken,
+    orderId,
+    null,
+  );
+  if (!contact.phone) {
+    return NextResponse.json({ ok: true, skipped: 'no_phone' });
+  }
+
+  const retryUrl =
+    (typeof contact.order?.order_status_url === 'string' &&
+      contact.order.order_status_url) ||
+    (typeof payload.receipt === 'object' &&
+    payload.receipt &&
+    typeof (payload.receipt as Record<string, unknown>).payment_id === 'string'
+      ? String((payload.receipt as Record<string, unknown>).payment_id)
+      : null) ||
+    'your store checkout';
+
+  const result = await sendLifecycleTemplate(db, {
+    accountId,
+    templateName,
+    templateLanguage,
+    phone: contact.phone,
+    name: contact.name,
+    // {{1}} name, {{2}} order, {{3}} retry URL
+    templateParams: [
+      firstNameFrom(contact.name),
+      contact.orderNumber,
+      retryUrl,
+    ],
+  });
+
+  return NextResponse.json({ ok: true, ...result });
 }

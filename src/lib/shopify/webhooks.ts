@@ -7,7 +7,15 @@ type ShopifyWebhook = {
   address: string;
 };
 
-const WEBHOOK_TOPICS = ['orders/create', 'checkouts/create', 'checkouts/update'] as const;
+const WEBHOOK_TOPICS = [
+  'orders/create',
+  'orders/cancelled',
+  'checkouts/create',
+  'checkouts/update',
+  'fulfillments/create',
+  'fulfillment_events/create',
+  'order_transactions/create',
+] as const;
 
 async function listWebhooksByTopic(
   domain: string,
