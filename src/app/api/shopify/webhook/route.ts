@@ -27,18 +27,18 @@ import { decrypt } from '@/lib/whatsapp/encryption';
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation';
 import { sendMessageToConversation } from '@/lib/whatsapp/send-message';
 
-const CONNECTION_SELECT = [
-  'account_id',
-  'access_token',
-  'order_template_name',
-  'order_template_language',
-  'abandoned_delay_hours',
-  'shipped_template_name',
-  'out_for_delivery_template_name',
-  'delivered_template_name',
-  'cancelled_template_name',
-  'payment_failed_template_name',
-].join(', ');
+type ShopifyConnectionRow = {
+  account_id: string;
+  access_token: string;
+  order_template_name: string | null;
+  order_template_language: string | null;
+  abandoned_delay_hours: number | null;
+  shipped_template_name: string | null;
+  out_for_delivery_template_name: string | null;
+  delivered_template_name: string | null;
+  cancelled_template_name: string | null;
+  payment_failed_template_name: string | null;
+};
 
 export async function POST(request: Request) {
   try {
@@ -60,23 +60,25 @@ export async function POST(request: Request) {
     }
 
     const db = supabaseAdmin();
-    const { data: connection, error: connErr } = await db
+    const { data: connectionRaw, error: connErr } = await db
       .from('shopify_connections')
-      .select(CONNECTION_SELECT)
+      .select(
+        'account_id, access_token, order_template_name, order_template_language, abandoned_delay_hours, shipped_template_name, out_for_delivery_template_name, delivered_template_name, cancelled_template_name, payment_failed_template_name',
+      )
       .eq('shop_domain', shop)
       .maybeSingle();
 
-    if (connErr || !connection) {
+    if (connErr || !connectionRaw) {
       console.warn(`[shopify/webhook] no connection for shop ${shop}`);
       return NextResponse.json({ ok: true, skipped: 'no_connection' });
     }
 
-    const accountId = connection.account_id as string;
-    const templateLanguage =
-      (connection.order_template_language as string) || 'en';
+    const connection = connectionRaw as unknown as ShopifyConnectionRow;
+    const accountId = connection.account_id;
+    const templateLanguage = connection.order_template_language || 'en';
     let accessToken = '';
     try {
-      accessToken = decrypt(connection.access_token as string);
+      accessToken = decrypt(connection.access_token);
     } catch (err) {
       console.error('[shopify/webhook] decrypt token failed:', err);
       return NextResponse.json({ ok: true, skipped: 'bad_token' });
@@ -181,7 +183,7 @@ export async function POST(request: Request) {
 
 type HandlerCtx = {
   db: ReturnType<typeof supabaseAdmin>;
-  connection: Record<string, unknown>;
+  connection: ShopifyConnectionRow;
   accountId: string;
   shop: string;
   payload: Record<string, unknown>;
@@ -191,7 +193,7 @@ type HandlerCtx = {
 
 async function handleOrderCreate(ctx: HandlerCtx) {
   const { db, connection, accountId, shop, payload, templateLanguage } = ctx;
-  const templateName = connection.order_template_name as string | null;
+  const templateName = connection.order_template_name;
   if (!templateName) {
     return NextResponse.json({ ok: true, skipped: 'no_template' });
   }
@@ -234,7 +236,6 @@ async function handleOrderCreate(ctx: HandlerCtx) {
     messageType: 'template',
     templateName,
     templateLanguage,
-    // Template: {{1}} order, {{2}} name
     templateParams: [orderNumber, firstName],
   });
 
@@ -254,7 +255,7 @@ async function handleOrderCancelled(ctx: HandlerCtx) {
     templateLanguage,
     accessToken = '',
   } = ctx;
-  const templateName = connection.cancelled_template_name as string | null;
+  const templateName = connection.cancelled_template_name;
   if (!templateName) {
     return NextResponse.json({ ok: true, skipped: 'no_template' });
   }
@@ -290,7 +291,6 @@ async function handleOrderCancelled(ctx: HandlerCtx) {
     templateLanguage,
     phone: contact.phone,
     name: contact.name,
-    // {{1}} name, {{2}} order
     templateParams: [firstNameFrom(contact.name), contact.orderNumber],
   });
 
@@ -307,13 +307,12 @@ async function handleFulfillmentCreated(ctx: HandlerCtx) {
     templateLanguage,
     accessToken = '',
   } = ctx;
-  const templateName = connection.shipped_template_name as string | null;
+  const templateName = connection.shipped_template_name;
   if (!templateName) {
     return NextResponse.json({ ok: true, skipped: 'no_template' });
   }
 
-  const fulfillmentId =
-    payload.id != null ? String(payload.id) : null;
+  const fulfillmentId = payload.id != null ? String(payload.id) : null;
   const orderId =
     payload.order_id != null ? String(payload.order_id) : null;
   if (!fulfillmentId) {
@@ -347,7 +346,6 @@ async function handleFulfillmentCreated(ctx: HandlerCtx) {
     templateLanguage,
     phone: contact.phone,
     name: contact.name,
-    // {{1}} name, {{2}} order, {{3}} tracking
     templateParams: [
       firstNameFrom(contact.name),
       contact.orderNumber,
@@ -375,10 +373,10 @@ async function handleFulfillmentEvent(ctx: HandlerCtx) {
   let topicKey = '';
 
   if (status === 'out_for_delivery') {
-    templateName = connection.out_for_delivery_template_name as string | null;
+    templateName = connection.out_for_delivery_template_name;
     topicKey = 'fulfillment_events/out_for_delivery';
   } else if (status === 'delivered') {
-    templateName = connection.delivered_template_name as string | null;
+    templateName = connection.delivered_template_name;
     topicKey = 'fulfillment_events/delivered';
   } else {
     return NextResponse.json({ ok: true, skipped: 'status', status });
@@ -421,7 +419,6 @@ async function handleFulfillmentEvent(ctx: HandlerCtx) {
     templateLanguage,
     phone: contact.phone,
     name: contact.name,
-    // {{1}} name, {{2}} order
     templateParams: [firstNameFrom(contact.name), contact.orderNumber],
   });
 
@@ -445,9 +442,7 @@ async function handlePaymentFailed(ctx: HandlerCtx) {
     return NextResponse.json({ ok: true, skipped: 'not_failed', status });
   }
 
-  const templateName = connection.payment_failed_template_name as
-    | string
-    | null;
+  const templateName = connection.payment_failed_template_name;
   if (!templateName) {
     return NextResponse.json({ ok: true, skipped: 'no_template' });
   }
@@ -482,11 +477,6 @@ async function handlePaymentFailed(ctx: HandlerCtx) {
   const retryUrl =
     (typeof contact.order?.order_status_url === 'string' &&
       contact.order.order_status_url) ||
-    (typeof payload.receipt === 'object' &&
-    payload.receipt &&
-    typeof (payload.receipt as Record<string, unknown>).payment_id === 'string'
-      ? String((payload.receipt as Record<string, unknown>).payment_id)
-      : null) ||
     'your store checkout';
 
   const result = await sendLifecycleTemplate(db, {
@@ -495,7 +485,6 @@ async function handlePaymentFailed(ctx: HandlerCtx) {
     templateLanguage,
     phone: contact.phone,
     name: contact.name,
-    // {{1}} name, {{2}} order, {{3}} retry URL
     templateParams: [
       firstNameFrom(contact.name),
       contact.orderNumber,
