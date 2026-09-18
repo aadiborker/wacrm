@@ -55,6 +55,9 @@ import {
 import { slugify, type BuilderNode } from "../shared";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
 
+const FLOW_MEDIA_BUCKET = "flow-media";
+const PRODUCT_IMAGE_ACCEPT = "image/png,image/jpeg,image/webp";
+
 interface NodeConfigFormProps {
   node: BuilderNode;
   allNodes: BuilderNode[];
@@ -357,9 +360,124 @@ interface SendListCfg {
       reply_id: string;
       title: string;
       description?: string;
+      image_url?: string;
+      product_text?: string;
+      buy_url?: string;
       next_node_key: string;
     }>;
   }>;
+}
+
+function ListRowImageField({
+  imageUrl,
+  onChange,
+  t,
+}: {
+  imageUrl: string;
+  onChange: (url: string) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = useCallback(
+    async (file: File) => {
+      const max = MEDIA_MAX_BYTES_BY_KIND.image;
+      if (file.size > max) {
+        toast.error(
+          `Image is ${(file.size / 1024 / 1024).toFixed(1)} MB — WhatsApp limit is 5 MB.`,
+        );
+        return;
+      }
+      setUploading(true);
+      try {
+        const { publicUrl } = await uploadAccountMedia(FLOW_MEDIA_BUCKET, file);
+        onChange(publicUrl);
+        toast.success(t("productImageUploaded"));
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : t("productImageFailed"),
+        );
+      } finally {
+        setUploading(false);
+      }
+    },
+    [onChange, t],
+  );
+
+  return (
+    <div className="space-y-1">
+      <label className="block text-xs text-muted-foreground">
+        {t("productImageLabel")}
+      </label>
+      {imageUrl ? (
+        <div className="flex items-start gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt=""
+            className="h-16 w-16 rounded-md border border-border object-cover"
+          />
+          <div className="flex flex-col gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ImagePlus className="h-3.5 w-3.5" />
+              )}
+              {t("replaceProductImage")}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onChange("")}
+            >
+              {t("removeProductImage")}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+        >
+          {uploading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ImagePlus className="h-3.5 w-3.5" />
+          )}
+          {uploading ? t("productImageUploading") : t("uploadProductImage")}
+        </Button>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept={PRODUCT_IMAGE_ACCEPT}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) void handleFile(file);
+        }}
+      />
+      <Input
+        value={imageUrl}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={t("mediaUrlPlaceholder")}
+        className="bg-muted text-xs"
+      />
+    </div>
+  );
 }
 
 function SendListForm({
@@ -505,54 +623,99 @@ function SendListForm({
             {section.rows.map((row, rIdx) => (
               <div
                 key={rIdx}
-                className={cn(
-                  "mb-2 grid grid-cols-1 gap-2",
-                  showAdvanced
-                    ? "md:grid-cols-[1fr_2fr_2fr_auto]"
-                    : "md:grid-cols-[2fr_2fr_auto]",
-                )}
+                className="mb-3 space-y-2 rounded-md border border-border/70 bg-background/40 p-3"
               >
-                {showAdvanced && (
-                  <Input
-                    value={row.reply_id}
-                    onChange={(e) =>
-                      updateRow(sIdx, rIdx, {
-                        reply_id: slugify(
-                          e.target.value,
-                          `row_${rIdx + 1}`,
-                        ),
-                      })
-                    }
-                    placeholder="reply_id"
-                    className="bg-muted font-mono text-xs"
-                  />
-                )}
-                <Input
-                  value={row.title}
-                  onChange={(e) =>
-                    updateRow(sIdx, rIdx, { title: e.target.value })
-                  }
-                  placeholder={t("rowTitlePlaceholder")}
-                  className="bg-muted"
-                  maxLength={24}
-                />
-                <NodeKeySelect
-                  value={row.next_node_key || null}
-                  nodes={allNodes}
-                  excludeKey={currentKey}
-                  onChange={(v) =>
-                    updateRow(sIdx, rIdx, { next_node_key: v ?? "" })
-                  }
-                  placeholder={t("nextNodePlaceholder")}
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removeRow(sIdx, rIdx)}
-                  className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                <div
+                  className={cn(
+                    "grid grid-cols-1 gap-2",
+                    showAdvanced
+                      ? "md:grid-cols-[1fr_2fr_2fr_auto]"
+                      : "md:grid-cols-[2fr_2fr_auto]",
+                  )}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                  {showAdvanced && (
+                    <Input
+                      value={row.reply_id}
+                      onChange={(e) =>
+                        updateRow(sIdx, rIdx, {
+                          reply_id: slugify(
+                            e.target.value,
+                            `row_${rIdx + 1}`,
+                          ),
+                        })
+                      }
+                      placeholder="reply_id"
+                      className="bg-muted font-mono text-xs"
+                    />
+                  )}
+                  <Input
+                    value={row.title}
+                    onChange={(e) =>
+                      updateRow(sIdx, rIdx, { title: e.target.value })
+                    }
+                    placeholder={t("rowTitlePlaceholder")}
+                    className="bg-muted"
+                    maxLength={24}
+                  />
+                  <NodeKeySelect
+                    value={row.next_node_key || null}
+                    nodes={allNodes}
+                    excludeKey={currentKey}
+                    onChange={(v) =>
+                      updateRow(sIdx, rIdx, { next_node_key: v ?? "" })
+                    }
+                    placeholder={t("nextNodePlaceholder")}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeRow(sIdx, rIdx)}
+                    className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+
+                <Input
+                  value={row.description ?? ""}
+                  onChange={(e) =>
+                    updateRow(sIdx, rIdx, { description: e.target.value })
+                  }
+                  placeholder={t("rowDescriptionPlaceholder")}
+                  className="bg-muted text-xs"
+                  maxLength={72}
+                />
+
+                <p className="text-muted-foreground text-[11px]">
+                  {t("listProductHint")}
+                </p>
+
+                <TextRow
+                  label={t("listProductTextLabel")}
+                  value={row.product_text ?? ""}
+                  onChange={(v) => updateRow(sIdx, rIdx, { product_text: v })}
+                  rows={2}
+                />
+
+                <ListRowImageField
+                  imageUrl={row.image_url ?? ""}
+                  onChange={(image_url) => updateRow(sIdx, rIdx, { image_url })}
+                  t={t}
+                />
+
+                <div className="space-y-1">
+                  <label className="block text-xs text-muted-foreground">
+                    {t("buyUrlLabel")}
+                  </label>
+                  <Input
+                    value={row.buy_url ?? ""}
+                    onChange={(e) =>
+                      updateRow(sIdx, rIdx, { buy_url: e.target.value })
+                    }
+                    placeholder={t("buyUrlPlaceholder")}
+                    className="bg-muted text-xs"
+                  />
+                </div>
               </div>
             ))}
             {totalRows < 10 && (
@@ -864,16 +1027,12 @@ function useUserTags(): UserTag[] {
 // send_message (text + optional product image + buy link)
 // ============================================================
 
-const FLOW_MEDIA_BUCKET = "flow-media";
-
 interface SendMessageCfg {
   text?: string;
   image_url?: string;
   buy_url?: string;
   next_node_key?: string;
 }
-
-const PRODUCT_IMAGE_ACCEPT = "image/png,image/jpeg,image/webp";
 
 function SendMessageForm({
   cfg,

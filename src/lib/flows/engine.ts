@@ -80,14 +80,37 @@ export function matchReplyId(
     return hit?.next_node_key ?? null;
   }
   if (node.node_type === "send_list") {
-    const cfg = node.config as unknown as SendListNodeConfig;
-    for (const section of cfg.sections ?? []) {
-      const hit = section.rows?.find((r) => r.reply_id === reply_id);
-      if (hit) return hit.next_node_key;
-    }
-    return null;
+    return findListRow(node, reply_id)?.next_node_key ?? null;
   }
   return null;
+}
+
+export type ListRowMatch = NonNullable<
+  SendListNodeConfig["sections"][number]["rows"][number]
+>;
+
+/** Find the list row that matched a WhatsApp list reply_id. */
+export function findListRow(
+  node: { node_type: string; config: Record<string, unknown> },
+  reply_id: string,
+): ListRowMatch | null {
+  if (node.node_type !== "send_list") return null;
+  const cfg = node.config as unknown as SendListNodeConfig;
+  for (const section of cfg.sections ?? []) {
+    const hit = section.rows?.find((r) => r.reply_id === reply_id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function rowHasProductExtras(row: {
+  image_url?: string;
+  buy_url?: string;
+  product_text?: string;
+}): boolean {
+  return Boolean(
+    row.image_url?.trim() || row.buy_url?.trim() || row.product_text?.trim(),
+  );
 }
 
 /**
@@ -565,6 +588,76 @@ async function endRun(
 // new current_node_key before returning.
 // ============================================================
 
+/**
+ * Send optional product image + composed text/buy-link for a list tap
+ * or send_message node. Returns false if a Meta send failed (caller
+ * should fail the run).
+ */
+async function deliverProductReply(
+  db: AdminClient,
+  run: FlowRunRow,
+  nodeKey: string,
+  opts: {
+    text?: string;
+    image_url?: string;
+    buy_url?: string;
+    titleFallback?: string;
+    logNodeType: string;
+  },
+): Promise<boolean> {
+  const textPart = interpolateVars(opts.text ?? "", run.vars);
+  const buyUrl = opts.buy_url
+    ? interpolateVars(opts.buy_url, run.vars).trim()
+    : "";
+  const imageUrl = opts.image_url
+    ? interpolateVars(opts.image_url, run.vars).trim()
+    : "";
+  const body = composeProductMessage({
+    messageText: textPart,
+    buyUrl: buyUrl || undefined,
+    titleFallback: opts.titleFallback,
+  });
+  if (!imageUrl && !body) return true;
+  try {
+    if (imageUrl) {
+      const { whatsapp_message_id } = await engineSendMedia({
+        accountId: run.account_id,
+        userId: run.user_id,
+        conversationId: run.conversation_id!,
+        contactId: run.contact_id!,
+        kind: "image",
+        link: imageUrl,
+      });
+      await logEvent(db, run.id, "message_sent", nodeKey, {
+        node_type: opts.logNodeType,
+        media: "image",
+        whatsapp_message_id,
+      });
+    }
+    if (body) {
+      const { whatsapp_message_id } = await engineSendText({
+        accountId: run.account_id,
+        userId: run.user_id,
+        conversationId: run.conversation_id!,
+        contactId: run.contact_id!,
+        text: body,
+      });
+      await logEvent(db, run.id, "message_sent", nodeKey, {
+        node_type: opts.logNodeType,
+        whatsapp_message_id,
+      });
+    }
+    return true;
+  } catch (err) {
+    await logEvent(db, run.id, "error", nodeKey, {
+      reason: "send_product_failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    await endRun(db, run.id, "failed", "send_product_failed");
+    return false;
+  }
+}
+
 async function advanceFromNodeKey(
   db: AdminClient,
   run: FlowRunRow,
@@ -600,54 +693,13 @@ async function advanceFromNodeKey(
     }
     if (node.node_type === "send_message") {
       const cfg = node.config as unknown as SendMessageNodeConfig;
-      const textPart = interpolateVars(cfg.text ?? "", run.vars);
-      const buyUrl = cfg.buy_url
-        ? interpolateVars(cfg.buy_url, run.vars).trim()
-        : "";
-      const imageUrl = cfg.image_url
-        ? interpolateVars(cfg.image_url, run.vars).trim()
-        : "";
-      const body = composeProductMessage({
-        messageText: textPart,
-        buyUrl: buyUrl || undefined,
+      const ok = await deliverProductReply(db, run, node.node_key, {
+        text: cfg.text,
+        image_url: cfg.image_url,
+        buy_url: cfg.buy_url,
+        logNodeType: "send_message",
       });
-      try {
-        if (imageUrl) {
-          const { whatsapp_message_id } = await engineSendMedia({
-            accountId: run.account_id,
-            userId: run.user_id,
-            conversationId: run.conversation_id!,
-            contactId: run.contact_id!,
-            kind: "image",
-            link: imageUrl,
-          });
-          await logEvent(db, run.id, "message_sent", node.node_key, {
-            node_type: "send_message",
-            media: "image",
-            whatsapp_message_id,
-          });
-        }
-        if (body) {
-          const { whatsapp_message_id } = await engineSendText({
-            accountId: run.account_id,
-            userId: run.user_id,
-            conversationId: run.conversation_id!,
-            contactId: run.contact_id!,
-            text: body,
-          });
-          await logEvent(db, run.id, "message_sent", node.node_key, {
-            node_type: "send_message",
-            whatsapp_message_id,
-          });
-        }
-      } catch (err) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "send_text_failed",
-          detail: err instanceof Error ? err.message : String(err),
-        });
-        await endRun(db, run.id, "failed", "send_text_failed");
-        return { outcome: "completed" };
-      }
+      if (!ok) return { outcome: "completed" };
       currentKey = cfg.next_node_key;
       continue;
     }
@@ -1015,12 +1067,18 @@ async function handleReplyForActiveRun(
   //
   // Everything else falls through to the fallback policy below.
   let matched: string | null = null;
+  let listRow: ListRowMatch | null = null;
   if (
     message.kind === "interactive_reply" &&
     (currentNode.node_type === "send_buttons" ||
       currentNode.node_type === "send_list")
   ) {
-    matched = matchReplyId(currentNode, message.reply_id);
+    if (currentNode.node_type === "send_list") {
+      listRow = findListRow(currentNode, message.reply_id);
+      matched = listRow?.next_node_key ?? null;
+    } else {
+      matched = matchReplyId(currentNode, message.reply_id);
+    }
   } else if (
     message.kind === "text" &&
     currentNode.node_type === "collect_input"
@@ -1067,6 +1125,22 @@ async function handleReplyForActiveRun(
         .eq("id", run.id);
       if (!error) run.reprompt_count = 0;
     }
+
+    // Product list rows: send image + buy link for the tapped product
+    // before advancing (so authors don't need N separate send_message nodes).
+    if (listRow && rowHasProductExtras(listRow)) {
+      const ok = await deliverProductReply(db, run, currentNode.node_key, {
+        text: listRow.product_text,
+        image_url: listRow.image_url,
+        buy_url: listRow.buy_url,
+        titleFallback: listRow.title,
+        logNodeType: "send_list",
+      });
+      if (!ok) {
+        return { consumed: true, flow_run_id: run.id, outcome: "completed" };
+      }
+    }
+
     const outcome = await advanceFromNodeKey(db, run, matched, nodes);
     return {
       consumed: true,

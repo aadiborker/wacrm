@@ -437,6 +437,9 @@ function validateNode(
             reply_id?: string;
             title?: string;
             description?: string;
+            image_url?: string;
+            product_text?: string;
+            buy_url?: string;
             next_node_key?: string;
           }>;
         }>;
@@ -536,6 +539,26 @@ function validateNode(
               node_key: node.node_key,
               field: `${field}.description`,
               message: `Row ${ri + 1} description exceeds ${INTERACTIVE_LIMITS.listRowDescriptionMaxLength} chars.`,
+            });
+          }
+          const imageUrl = row.image_url?.trim() ?? "";
+          const buyUrl = row.buy_url?.trim() ?? "";
+          if (imageUrl && !isHttpsUrl(imageUrl)) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: `${field}.image_url`,
+              message: `Row ${ri + 1} product image URL must start with https://`,
+            });
+          }
+          if (buyUrl && !isHttpsUrl(buyUrl)) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: `${field}.buy_url`,
+              message: `Row ${ri + 1} buy link must start with https://`,
             });
           }
           if (!row.next_node_key) {

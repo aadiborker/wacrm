@@ -1373,6 +1373,9 @@
         "rowsHelp": "Rows (1–10 total across all sections)",
         "sectionTitlePlaceholder": "Section {count} title (optional)",
         "rowTitlePlaceholder": "Row title (≤24)",
+        "rowDescriptionPlaceholder": "Short description in the list (≤72, optional)",
+        "listProductHint": "When tapped: send this product photo + message + buy link, then advance to the next node.",
+        "listProductTextLabel": "Product message (sent on tap)",
         "addRow": "Add row",
         "addSection": "Add section",
         "ifLabel": "If",
@@ -1434,7 +1437,7 @@
         },
         "send_list": {
           "label": "Send list",
-          "blurb": "Sends a tappable list of options"
+          "blurb": "Product / option list — each row can send image + buy link"
         },
         "send_media": {
           "label": "Send media",
@@ -1487,6 +1490,7 @@
       "audio": "Audio",
       "withImage": "image",
       "withBuyLink": "buy link",
+      "productsInList": "{count} {count, plural, =1 {product} other {products}}",
       "hasTag": "has tag {tag}",
       "opContains": "contains",
       "opExists": "exists",

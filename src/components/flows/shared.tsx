@@ -121,7 +121,7 @@ export const NODE_META: Record<
     label: 'Send list',
     icon: ListPlus,
     color: 'text-indigo-400',
-    blurb: 'Sends a tappable list of options',
+    blurb: 'Product / option list — each row can send image + buy link',
     category: 'messaging',
   },
   send_media: {
@@ -345,14 +345,28 @@ export function summarizeNode(
       const sections = Array.isArray(cfg.sections)
         ? (cfg.sections as Array<Record<string, unknown>>)
         : [];
-      const rowCount = sections.reduce<number>((sum, s) => {
-        const rows = Array.isArray(s.rows) ? s.rows : [];
-        return sum + rows.length;
-      }, 0);
+      const rows = sections.flatMap((s) =>
+        Array.isArray(s.rows) ? (s.rows as Array<Record<string, unknown>>) : [],
+      );
+      const rowCount = rows.length;
+      const productCount = rows.filter(
+        (r) =>
+          (typeof r.image_url === 'string' && r.image_url.trim()) ||
+          (typeof r.buy_url === 'string' && r.buy_url.trim()) ||
+          (typeof r.product_text === 'string' && r.product_text.trim()),
+      ).length;
       if (text.length > 0) {
-        return rowCount > 0
-          ? `${truncate(text, 50)} · ${t ? t('options', { count: rowCount }) : `${rowCount} option${rowCount === 1 ? '' : 's'}`}`
-          : truncate(text);
+        const suffix =
+          productCount > 0
+            ? t
+              ? t('productsInList', { count: productCount })
+              : `${productCount} product${productCount === 1 ? '' : 's'}`
+            : rowCount > 0
+              ? t
+                ? t('options', { count: rowCount })
+                : `${rowCount} option${rowCount === 1 ? '' : 's'}`
+              : null;
+        return suffix ? `${truncate(text, 50)} · ${suffix}` : truncate(text);
       }
       return rowCount > 0
         ? t

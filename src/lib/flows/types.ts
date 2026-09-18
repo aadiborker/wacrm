@@ -73,6 +73,20 @@ export interface SendListNodeConfig {
       reply_id: string;
       title: string;
       description?: string;
+      /**
+       * Optional product image sent when this row is tapped (before
+       * advancing to next_node_key). Public HTTPS URL.
+       */
+      image_url?: string;
+      /**
+       * Optional product body sent on tap. Falls back to the row title
+       * when buy_url/image_url are set but this is empty.
+       */
+      product_text?: string;
+      /**
+       * Optional ecommerce HTTPS link appended under “Buy now:” on tap.
+       */
+      buy_url?: string;
       next_node_key: string;
     }>;
   }>;
