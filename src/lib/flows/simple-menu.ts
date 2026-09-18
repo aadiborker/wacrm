@@ -15,6 +15,7 @@ import type {
   HandoffNodeConfig,
   KeywordTriggerConfig,
   SendListNodeConfig,
+  SendMediaNodeConfig,
   SendMessageNodeConfig,
   StartNodeConfig,
 } from "./types";
@@ -28,6 +29,10 @@ export interface SimpleMenuLeaf {
   action: SimpleLeafAction;
   /** Sent as a WhatsApp text bubble before handoff when action=message. */
   messageText?: string;
+  /** Optional product image (public HTTPS URL). Sent before the text. */
+  imageUrl?: string;
+  /** Optional ecommerce “Buy now” HTTPS link appended to the message. */
+  buyUrl?: string;
   /** Internal note on the handoff node (agents see this in the run). */
   handoffNote?: string;
   /** Body for a nested list when action=submenu. */
@@ -45,6 +50,8 @@ export interface SimpleMenuOption {
   title: string;
   action: SimpleMenuOptionAction;
   messageText?: string;
+  imageUrl?: string;
+  buyUrl?: string;
   handoffNote?: string;
   /** Body text for the nested list when action=submenu. */
   submenuBody?: string;
@@ -96,6 +103,62 @@ function slugReplyId(prefix: string, title: string, index: number): string {
   return `${prefix}_${index}_${base || "opt"}`.slice(0, 200);
 }
 
+function isHttpsUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function validateProductExtras(
+  item: { messageText?: string; imageUrl?: string; buyUrl?: string; title?: string },
+  fieldPrefix: string,
+  label: string,
+  issues: SimpleMenuIssue[],
+): void {
+  const msg = trim(item.messageText);
+  const imageUrl = trim(item.imageUrl);
+  const buyUrl = trim(item.buyUrl);
+
+  if (!msg && !imageUrl && !buyUrl) {
+    issues.push({
+      field: `${fieldPrefix}.messageText`,
+      message: `${label}: add a message, product image, or buy link.`,
+    });
+  }
+  if (imageUrl && !isHttpsUrl(imageUrl)) {
+    issues.push({
+      field: `${fieldPrefix}.imageUrl`,
+      message: `${label}: image URL must start with https://`,
+    });
+  }
+  if (buyUrl && !isHttpsUrl(buyUrl)) {
+    issues.push({
+      field: `${fieldPrefix}.buyUrl`,
+      message: `${label}: buy link must start with https://`,
+    });
+  }
+}
+
+function composeProductMessage(item: {
+  title: string;
+  messageText?: string;
+  buyUrl?: string;
+}): string {
+  const parts: string[] = [];
+  const msg = trim(item.messageText);
+  if (msg) parts.push(msg);
+  else if (trim(item.title)) parts.push(trim(item.title));
+
+  const buyUrl = trim(item.buyUrl);
+  if (buyUrl) {
+    parts.push(`Buy now:\n${buyUrl}`);
+  }
+  return parts.join("\n\n").slice(0, BODY_MAX);
+}
+
 function validateLeaves(
   leaves: SimpleMenuLeaf[],
   fieldPrefix: string,
@@ -130,11 +193,8 @@ function validateLeaves(
       });
     }
 
-    if (leaf.action === "message" && !trim(leaf.messageText)) {
-      issues.push({
-        field: `${lp}.messageText`,
-        message: `Choice ${j + 1}: add a message, or pick another action.`,
-      });
+    if (leaf.action === "message") {
+      validateProductExtras(leaf, lp, `Choice ${j + 1}`, issues);
     }
 
     if (leaf.action === "submenu") {
@@ -218,11 +278,8 @@ export function validateSimpleMenuSpec(spec: SimpleMenuSpec): SimpleMenuIssue[] 
       });
     }
 
-    if (opt.action === "message" && !trim(opt.messageText)) {
-      issues.push({
-        field: `${prefix}.messageText`,
-        message: `Option ${i + 1}: add the message to send, or choose Hand off.`,
-      });
+    if (opt.action === "message") {
+      validateProductExtras(opt, prefix, `Option ${i + 1}`, issues);
     }
     if (opt.action === "submenu") {
       if (!trim(opt.submenuBody)) {
@@ -266,9 +323,62 @@ function messageNode(
   return { node_key, node_type: "send_message", config };
 }
 
+function mediaNode(
+  node_key: string,
+  media_url: string,
+  next_node_key: string,
+  caption?: string,
+): FlowTemplateNode {
+  const config: SendMediaNodeConfig = {
+    media_type: "image",
+    media_url,
+    caption: caption || undefined,
+    next_node_key,
+  };
+  return { node_key, node_type: "send_media", config };
+}
+
 function handoffNode(node_key: string, note: string): FlowTemplateNode {
   const config: HandoffNodeConfig = { note };
   return { node_key, node_type: "handoff", config };
+}
+
+/** Emit image (optional) → text+buy link → handoff. Returns entry node key. */
+function emitMessageLeaf(
+  nodes: FlowTemplateNode[],
+  item: {
+    title: string;
+    messageText?: string;
+    imageUrl?: string;
+    buyUrl?: string;
+    handoffNote?: string;
+  },
+  keyBase: string,
+): string {
+  const hk = `handoff_${keyBase}`;
+  const body = composeProductMessage(item);
+  const imageUrl = trim(item.imageUrl);
+  const note = trim(item.handoffNote) || `Follow-up after: ${trim(item.title)}`;
+
+  nodes.push(handoffNode(hk, note));
+
+  if (imageUrl && body) {
+    const mk = `msg_${keyBase}`;
+    const ik = `img_${keyBase}`;
+    nodes.push(messageNode(mk, body, hk));
+    nodes.push(mediaNode(ik, imageUrl, mk));
+    return ik;
+  }
+
+  if (imageUrl) {
+    const ik = `img_${keyBase}`;
+    nodes.push(mediaNode(ik, imageUrl, hk, trim(item.title) || undefined));
+    return ik;
+  }
+
+  const mk = `msg_${keyBase}`;
+  nodes.push(messageNode(mk, body || trim(item.title) || "Thanks!", hk));
+  return mk;
 }
 
 /**
@@ -300,13 +410,7 @@ function emitLeaf(
   }
 
   if (leaf.action === "message") {
-    const mk = `msg_${keyBase}`;
-    const hk = `handoff_${keyBase}`;
-    nodes.push(messageNode(mk, trim(leaf.messageText)!, hk));
-    nodes.push(
-      handoffNode(hk, trim(leaf.handoffNote) || `Follow-up after: ${lt}`),
-    );
-    return mk;
+    return emitMessageLeaf(nodes, leaf, keyBase);
   }
 
   // submenu
@@ -390,16 +494,8 @@ export function buildSimpleMenuFlow(spec: SimpleMenuSpec): BuiltSimpleMenuFlow {
     }
 
     if (opt.action === "message") {
-      const msgKey = `msg_${i}`;
-      const handoffKey = `handoff_${i}`;
-      nodes.push(messageNode(msgKey, trim(opt.messageText)!, handoffKey));
-      nodes.push(
-        handoffNode(
-          handoffKey,
-          trim(opt.handoffNote) || `Follow-up after: ${title}`,
-        ),
-      );
-      mainRows.push({ reply_id, title, next_node_key: msgKey });
+      const entry = emitMessageLeaf(nodes, { ...opt, title }, `${i}`);
+      mainRows.push({ reply_id, title, next_node_key: entry });
       return;
     }
 
@@ -590,6 +686,20 @@ function listRows(config: Record<string, unknown>): Array<{
   return rows;
 }
 
+/** Split "Buy now:\\nhttps://..." trailer back into message + buyUrl. */
+function splitBuyUrlFromMessage(text: string): {
+  messageText: string;
+  buyUrl?: string;
+} {
+  const marker = /\n\nBuy now:\n(https:\/\/\S+)\s*$/i;
+  const match = text.match(marker);
+  if (!match) return { messageText: text };
+  return {
+    messageText: text.slice(0, match.index).trim(),
+    buyUrl: match[1],
+  };
+}
+
 function inferChoice(
   title: string,
   nextKey: string,
@@ -611,9 +721,53 @@ function inferChoice(
     return { title, action: "handoff", handoffNote: note };
   }
 
+  if (node.node_type === "send_media") {
+    const imageUrl =
+      typeof node.config.media_url === "string" ? node.config.media_url : "";
+    const after =
+      typeof node.config.next_node_key === "string"
+        ? node.config.next_node_key
+        : "";
+    const afterNode = after ? byKey.get(after) : undefined;
+    if (afterNode?.node_type === "send_message") {
+      const text =
+        typeof afterNode.config.text === "string" ? afterNode.config.text : "";
+      const { messageText, buyUrl } = splitBuyUrlFromMessage(text);
+      let handoffNote: string | undefined;
+      const afterMsg =
+        typeof afterNode.config.next_node_key === "string"
+          ? afterNode.config.next_node_key
+          : "";
+      const handoffNode = afterMsg ? byKey.get(afterMsg) : undefined;
+      if (handoffNode?.node_type === "handoff") {
+        handoffNote =
+          typeof handoffNode.config.note === "string"
+            ? handoffNode.config.note
+            : undefined;
+      }
+      return {
+        title,
+        action: "message",
+        messageText,
+        buyUrl,
+        imageUrl,
+        handoffNote,
+      };
+    }
+    const caption =
+      typeof node.config.caption === "string" ? node.config.caption : "";
+    return {
+      title,
+      action: "message",
+      messageText: caption || undefined,
+      imageUrl,
+    };
+  }
+
   if (node.node_type === "send_message") {
     const text =
       typeof node.config.text === "string" ? node.config.text : "";
+    const { messageText, buyUrl } = splitBuyUrlFromMessage(text);
     const after =
       typeof node.config.next_node_key === "string"
         ? node.config.next_node_key
@@ -629,7 +783,8 @@ function inferChoice(
     return {
       title,
       action: "message",
-      messageText: text,
+      messageText,
+      buyUrl,
       handoffNote,
     };
   }

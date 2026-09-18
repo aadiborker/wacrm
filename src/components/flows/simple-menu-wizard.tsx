@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -15,6 +15,7 @@ import {
   PauseCircle,
   PlayCircle,
   CircleDot,
+  ImagePlus,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -43,6 +44,13 @@ import {
   type FlowFallbackPolicy,
   type FlowRow,
 } from "@/lib/flows/types";
+import {
+  MEDIA_MAX_BYTES_BY_KIND,
+  uploadAccountMedia,
+} from "@/lib/storage/upload-media";
+
+const FLOW_MEDIA_BUCKET = "flow-media";
+const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp";
 
 type Step = 1 | 2 | 3;
 type FlowStatus = FlowRow["status"];
@@ -831,16 +839,13 @@ function OptionCard({
       </div>
 
       {option.action === "message" && (
-        <div className="space-y-2">
-          <Label>{t("messageLabel")}</Label>
-          <Textarea
-            value={option.messageText ?? ""}
-            onChange={(e) => onChange({ messageText: e.target.value })}
-            placeholder={t("messagePlaceholder")}
-            rows={3}
-            className="bg-muted"
-          />
-        </div>
+        <ProductMessageFields
+          t={t}
+          messageText={option.messageText ?? ""}
+          imageUrl={option.imageUrl ?? ""}
+          buyUrl={option.buyUrl ?? ""}
+          onChange={onChange}
+        />
       )}
 
       {(option.action === "handoff" || option.action === "message") && (
@@ -967,12 +972,12 @@ function LeafCard({
         }}
       />
       {leaf.action === "message" && (
-        <Textarea
-          value={leaf.messageText ?? ""}
-          onChange={(e) => onChange({ messageText: e.target.value })}
-          placeholder={t("messagePlaceholder")}
-          rows={2}
-          className="bg-muted"
+        <ProductMessageFields
+          t={t}
+          messageText={leaf.messageText ?? ""}
+          imageUrl={leaf.imageUrl ?? ""}
+          buyUrl={leaf.buyUrl ?? ""}
+          onChange={onChange}
         />
       )}
       {(leaf.action === "handoff" || leaf.action === "message") && (
@@ -1020,6 +1025,141 @@ function LeafCard({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+function ProductMessageFields({
+  t,
+  messageText,
+  imageUrl,
+  buyUrl,
+  onChange,
+}: {
+  t: ReturnType<typeof useTranslations>;
+  messageText: string;
+  imageUrl: string;
+  buyUrl: string;
+  onChange: (p: {
+    messageText?: string;
+    imageUrl?: string;
+    buyUrl?: string;
+  }) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = useCallback(
+    async (file: File) => {
+      const max = MEDIA_MAX_BYTES_BY_KIND.image;
+      if (file.size > max) {
+        toast.error(
+          `Image is ${(file.size / 1024 / 1024).toFixed(1)} MB — WhatsApp limit is 5 MB.`,
+        );
+        return;
+      }
+      setUploading(true);
+      try {
+        const { publicUrl } = await uploadAccountMedia(FLOW_MEDIA_BUCKET, file);
+        onChange({ imageUrl: publicUrl });
+        toast.success(t("imageUploaded"));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t("imageUploadFailed"));
+      } finally {
+        setUploading(false);
+      }
+    },
+    [onChange, t],
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <Label>{t("messageLabel")}</Label>
+        <Textarea
+          value={messageText}
+          onChange={(e) => onChange({ messageText: e.target.value })}
+          placeholder={t("messagePlaceholder")}
+          rows={3}
+          className="bg-muted"
+        />
+        <p className="text-muted-foreground text-xs">{t("productExtrasHint")}</p>
+      </div>
+
+      <div className="space-y-2">
+        <Label>{t("imageLabel")}</Label>
+        {imageUrl ? (
+          <div className="flex items-start gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt=""
+              className="h-20 w-20 rounded-md object-cover border border-border"
+            />
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ImagePlus className="h-3.5 w-3.5" />
+                )}
+                {t("replaceImage")}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onChange({ imageUrl: "" })}
+              >
+                {t("removeImage")}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ImagePlus className="h-3.5 w-3.5" />
+            )}
+            {uploading ? t("uploadingImage") : t("uploadImage")}
+          </Button>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept={IMAGE_ACCEPT}
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void handleFile(file);
+          }}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>{t("buyUrlLabel")}</Label>
+        <Input
+          value={buyUrl}
+          onChange={(e) => onChange({ buyUrl: e.target.value })}
+          placeholder={t("buyUrlPlaceholder")}
+          className="bg-muted"
+        />
+        <p className="text-muted-foreground text-xs">{t("buyUrlHint")}</p>
+      </div>
     </div>
   );
 }

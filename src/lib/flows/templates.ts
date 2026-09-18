@@ -26,6 +26,7 @@ import type {
   KeywordTriggerConfig,
   SendButtonsNodeConfig,
   SendListNodeConfig,
+  SendMediaNodeConfig,
   SendMessageNodeConfig,
   StartNodeConfig,
 } from "./types";
@@ -33,6 +34,7 @@ import type {
 export type FlowTemplateNodeType =
   | "start"
   | "send_message"
+  | "send_media"
   | "send_buttons"
   | "send_list"
   | "collect_input"
@@ -47,6 +49,7 @@ export interface FlowTemplateNode {
   config:
     | StartNodeConfig
     | SendMessageNodeConfig
+    | SendMediaNodeConfig
     | SendButtonsNodeConfig
     | SendListNodeConfig
     | CollectInputNodeConfig

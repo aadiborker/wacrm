@@ -145,4 +145,56 @@ describe("buildSimpleMenuFlow", () => {
     expect(inferred!.options[1]!.action).toBe("submenu");
     expect(inferred!.options[1]!.submenuOptions).toHaveLength(2);
   });
+
+  it("emits image then message with buy link for product choices", () => {
+    const built = buildSimpleMenuFlow({
+      name: "Choco",
+      keyword: "shop",
+      welcomeText: "Pick a category",
+      options: [
+        {
+          title: "Premium",
+          action: "submenu",
+          submenuBody: "Pick a chocolate",
+          submenuOptions: [
+            {
+              title: "Funtan",
+              action: "message",
+              messageText: "Rich premium chocolate.",
+              imageUrl: "https://cdn.example.com/funtan.jpg",
+              buyUrl: "https://shop.example.com/products/funtan",
+            },
+          ],
+        },
+      ],
+    });
+    const keys = built.nodes.map((n) => n.node_key);
+    expect(keys).toContain("img_sub_0_0");
+    expect(keys).toContain("msg_sub_0_0");
+    const img = built.nodes.find((n) => n.node_key === "img_sub_0_0");
+    expect(img?.node_type).toBe("send_media");
+    expect((img?.config as { media_url: string }).media_url).toContain(
+      "funtan",
+    );
+    const msg = built.nodes.find((n) => n.node_key === "msg_sub_0_0");
+    const text = (msg?.config as { text: string }).text;
+    expect(text).toContain("Rich premium chocolate.");
+    expect(text).toContain("Buy now:");
+    expect(text).toContain("https://shop.example.com/products/funtan");
+  });
+
+  it("rejects non-https buy links", () => {
+    const issues = validateSimpleMenuSpec({
+      ...valid,
+      options: [
+        {
+          title: "Deal",
+          action: "message",
+          messageText: "Hi",
+          buyUrl: "http://insecure.example/buy",
+        },
+      ],
+    });
+    expect(issues.some((i) => i.field.includes("buyUrl"))).toBe(true);
+  });
 });
