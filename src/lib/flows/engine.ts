@@ -439,7 +439,9 @@ async function sendListAndSuspend(
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendListNodeConfig;
   const sections = (cfg.sections ?? []).map((s) => ({
-    title: s.title?.trim() || undefined,
+    title: s.title?.trim()
+      ? s.title.trim().slice(0, 24)
+      : undefined,
     rows: (s.rows ?? []).map((r) => ({
       id: (r.reply_id || "").trim(),
       title: (r.title || "").trim().slice(0, 24),

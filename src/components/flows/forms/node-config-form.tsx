@@ -607,7 +607,11 @@ function SendListForm({
                 }
                 placeholder={t("sectionTitlePlaceholder", { count: sIdx + 1 })}
                 className="bg-muted text-xs"
+                maxLength={24}
               />
+              <p className="text-muted-foreground text-[10px]">
+                {t("sectionTitleHint")}
+              </p>
               {sections.length > 1 && (
                 <Button
                   variant="ghost"

@@ -748,6 +748,7 @@ export const INTERACTIVE_LIMITS = {
   buttonTitleMaxLength: 20,
   maxListSections: 10,
   maxListRowsTotal: 10,
+  listSectionTitleMaxLength: 24,
   listRowTitleMaxLength: 24,
   listRowDescriptionMaxLength: 72,
   bodyMaxLength: 1024,
@@ -922,6 +923,14 @@ export async function sendInteractiveList(
   }
   const seenIds = new Set<string>()
   for (const section of sections) {
+    if (
+      section.title &&
+      section.title.length > INTERACTIVE_LIMITS.listSectionTitleMaxLength
+    ) {
+      throw new Error(
+        `Interactive list section title "${section.title}" exceeds ${INTERACTIVE_LIMITS.listSectionTitleMaxLength} chars.`,
+      )
+    }
     for (const row of section.rows) {
       if (!row.id) throw new Error('Interactive list row missing id.')
       if (seenIds.has(row.id)) {
