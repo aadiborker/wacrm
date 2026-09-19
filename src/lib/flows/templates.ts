@@ -30,6 +30,7 @@ import type {
   SendMessageNodeConfig,
   StartNodeConfig,
 } from "./types";
+import { CAMPCO_SHOP } from "./campco-shop-template";
 
 export type FlowTemplateNodeType =
   | "start"
@@ -296,6 +297,7 @@ const TEMPLATES: Record<string, FlowTemplate> = {
   welcome_menu: WELCOME_MENU,
   faq_bot: FAQ_BOT,
   lead_capture: LEAD_CAPTURE,
+  campco_shop: CAMPCO_SHOP as FlowTemplate,
 };
 
 export function getFlowTemplate(slug: string): FlowTemplate | null {
