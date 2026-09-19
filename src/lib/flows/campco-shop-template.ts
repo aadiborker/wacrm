@@ -124,7 +124,7 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
     // ── 1. Main menu ──────────────────────────────────────────
     list(
       "main_menu",
-      "Hi! 👋 Welcome to *CAMPCO Chocolates* 🍫❤️\n\nLooking for something delicious? We’d love to help you find the perfect chocolate.\n\nWhat would you like to do today?",
+      "Hi! Welcome to *CAMPCO Chocolates*\n\nLooking for something delicious? We’d love to help you find the perfect chocolate.\n\nWhat would you like to do today?",
       "Choose option",
       "Main menu",
       [
@@ -158,7 +158,7 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
     // ── 2. Mood / premium picker ──────────────────────────────
     list(
       "mood_menu",
-      "Great choice! 😍🍫\n\nLet’s find a chocolate you’ll love.\n\n*What are you in the mood for?*",
+      "Great choice!\n\nLet’s find a chocolate you’ll love.\n\n*What are you in the mood for?*",
       "Pick a mood",
       "Mood",
       [
@@ -194,30 +194,30 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
     // ── 3. Product replies ────────────────────────────────────
     productMessage(
       "prod_funtan",
-      "If you enjoy a bold cocoa flavour, you should try:\n\n🍫 *CAMPCO Funtan Dark Chocolate*\n\nRich cocoa. Smooth finish. A classic dark chocolate experience for those who like their chocolate a little more intense.\n\n*50 g | ₹80*",
+      "If you enjoy a bold cocoa flavour, you should try:\n\n*CAMPCO Funtan Dark Chocolate*\n\nRich cocoa. Smooth finish. A classic dark chocolate experience for those who like their chocolate a little more intense.\n\n*50 g | ₹80*",
       URLS.funtan,
       "after_product",
     ),
     productMessage(
       "prod_milk",
-      "Creamy chocolate coming right up! 😍\n\n🥛🍫 *CAMPCO Milk Marvel*\n\nSilky, smooth milk chocolate with a rich, creamy taste — perfect for treating yourself, sharing or gifting.\n\n*50 g | ₹80*",
+      "Creamy chocolate coming right up! \n\n*CAMPCO Milk Marvel*\n\nSilky, smooth milk chocolate with a rich, creamy taste — perfect for treating yourself, sharing or gifting.\n\n*50 g | ₹80*",
       URLS.milkMarvel,
       "after_product",
     ),
     productMessage(
       "prod_dieter",
-      "Chocolate without added sugar? We’ve got you. 🍫✨\n\n🌑 *CAMPCO Dieter Sugar-Free Dark Chocolate*\n\nA rich dark chocolate experience with *no added sugar*, made for chocolate lovers looking for a sugar-free option.\n\n*50 g | ₹80*",
+      "Chocolate without added sugar? We’ve got you. \n\n*CAMPCO Dieter Sugar-Free Dark Chocolate*\n\nA rich dark chocolate experience with *no added sugar*, made for chocolate lovers looking for a sugar-free option.\n\n*50 g | ₹80*",
       URLS.dieter,
       "after_product",
     ),
     productMessage(
       "prod_krunch",
-      "We have something delicious for you! 😋\n\n🍫 *CAMPCO Krunch*\n\nRich, smooth and creamy milk chocolate — an easy pick when you just want to enjoy a good chocolate moment.\n\n*50 g | ₹80*",
+      "We have something delicious for you! \n\n*CAMPCO Krunch*\n\nRich, smooth and creamy milk chocolate — an easy pick when you just want to enjoy a good chocolate moment.\n\n*50 g | ₹80*",
       URLS.krunch,
       "after_product",
     ),
 
-    buttons("after_product", "Want to keep exploring? 🍫", [
+    buttons("after_product", "Want to keep exploring?", [
       {
         reply_id: "another",
         title: "Another chocolate",
@@ -238,7 +238,7 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
     // ── 7. Multi-chocolate upsell ─────────────────────────────
     productMessage(
       "upsell_msg",
-      "Why stop at one? 😉🍫\n\nCAMPCO Cart offers *free delivery on orders above ₹200*.\n\nPick a few favourites and make your chocolate delivery even sweeter. ❤️",
+      "Why stop at one?\n\nCAMPCO Cart offers *free delivery on orders above ₹200*.\n\nPick a few favourites and make your chocolate delivery even sweeter.",
       URLS.premium,
       "after_upsell",
     ),
@@ -258,7 +258,7 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
     // ── 4. Explore categories ─────────────────────────────────
     list(
       "explore_cats",
-      "Of course! 😊\n\nThere’s a lot more to explore at CAMPCO.\n\nChoose a category and we’ll take you there:",
+      "Of course!\n\nThere’s a lot more to explore at CAMPCO.\n\nChoose a category and we’ll take you there:",
       "Categories",
       "Shop by category",
       [
@@ -293,7 +293,7 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
     // ── 5. Premium quick picks ────────────────────────────────
     list(
       "premium_picks",
-      "Here are a few CAMPCO favourites ❤️🍫\n\nSelect a chocolate to get its purchase link:",
+      "Here are a few CAMPCO favourites.\n\nSelect a chocolate to get its purchase link:",
       "Pick chocolate",
       "Premium picks",
       [
@@ -326,25 +326,25 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
 
     productMessage(
       "link_cooking",
-      "👨‍🍳 *Cooking Chocolates*\n\nPerfect for baking, melting and making desserts at home.",
+      "*Cooking Chocolates*\n\nPerfect for baking, melting and making desserts at home.",
       URLS.cooking,
       "after_category",
     ),
     productMessage(
       "link_treats",
-      "🎁 *Chocolate Treats & Gifts*\n\nReady-to-gift picks for celebrations and sweet surprises.",
+      "*Chocolate Treats & Gifts*\n\nReady-to-gift picks for celebrations and sweet surprises.",
       URLS.treats,
       "after_category",
     ),
     productMessage(
       "link_drinking",
-      "☕ *Drinking Chocolate*\n\nWarm, comforting cocoa moments — anytime.",
+      "*Drinking Chocolate*\n\nWarm, comforting cocoa moments — anytime.",
       URLS.drinking,
       "after_category",
     ),
     productMessage(
       "link_everything",
-      "🛍️ Explore the full CAMPCO range — something delicious for every craving.",
+      "Explore the full CAMPCO range — something delicious for every craving.",
       URLS.everything,
       "after_category",
     ),
@@ -365,7 +365,7 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
     // ── 6. Help me choose ─────────────────────────────────────
     list(
       "help_choose",
-      "Not sure which one to pick? 😊\n\nNo problem — tell us what you prefer.",
+      "Not sure which one to pick?\n\nNo problem — tell us what you prefer.",
       "My preference",
       "I prefer…",
       [
@@ -398,7 +398,7 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
       node_type: "collect_input",
       config: {
         prompt_text:
-          "Absolutely! 📦\n\nLet’s check your CAMPCO order.\n\nPlease send us your *Order Number*.\n\nExample: #12345",
+          "Absolutely!\n\nLet’s check your CAMPCO order.\n\nPlease send us your *Order Number*.\n\nExample: #12345",
         var_key: "order_id",
         next_node_key: "order_ack",
       } as CollectInputNodeConfig,
@@ -427,7 +427,7 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
     // ── 9. Customer support ───────────────────────────────────
     list(
       "support_menu",
-      "We’re happy to help. 😊\n\nPlease choose what you need assistance with:",
+      "We’re happy to help.\n\nPlease choose what you need assistance with:",
       "Support topics",
       "I need help with",
       [
