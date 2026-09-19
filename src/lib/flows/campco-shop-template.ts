@@ -33,7 +33,7 @@ type CampcoFlowTemplate = {
   }>;
 };
 
-/** Live Campco Cart links (from campcocart.com products/collections JSON). */
+/** Live Campco Cart links + CDN images (from campcocart.com products JSON). */
 const URLS = {
   funtan: "https://campcocart.com/products/campco-funtan-dark-chocolate",
   milkMarvel: "https://campcocart.com/products/campco-milk-marvel",
@@ -45,6 +45,17 @@ const URLS = {
   treats: "https://campcocart.com/collections/choco-treats",
   drinking: "https://campcocart.com/collections/drinking-choclate",
   everything: "https://campcocart.com/collections/all",
+} as const;
+
+const IMAGES = {
+  funtan:
+    "https://cdn.shopify.com/s/files/1/0767/3220/3234/files/FUNTAN4.png?v=1786543315",
+  milkMarvel:
+    "https://cdn.shopify.com/s/files/1/0767/3220/3234/files/MILK_MARVEL_2.png?v=1786537972",
+  dieter:
+    "https://cdn.shopify.com/s/files/1/0767/3220/3234/files/ditier.png?v=1786540741",
+  krunch:
+    "https://cdn.shopify.com/s/files/1/0767/3220/3234/files/KRUNCH_3.jpg?v=1786544601",
 } as const;
 
 function list(
@@ -75,6 +86,7 @@ function productMessage(
   text: string,
   buy_url: string,
   next_node_key: string,
+  image_url?: string,
 ): CampcoFlowTemplate["nodes"][number] {
   return {
     node_key,
@@ -82,6 +94,7 @@ function productMessage(
     config: {
       text,
       buy_url,
+      ...(image_url ? { image_url } : {}),
       next_node_key,
     } as SendMessageNodeConfig,
   };
@@ -191,30 +204,34 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
       ],
     ),
 
-    // ── 3. Product replies ────────────────────────────────────
+    // ── 3. Product replies (image + name + buy link) ─────────
     productMessage(
       "prod_funtan",
-      "If you enjoy a bold cocoa flavour, you should try:\n\n*CAMPCO Funtan Dark Chocolate*\n\nRich cocoa. Smooth finish. A classic dark chocolate experience for those who like their chocolate a little more intense.\n\n*50 g | ₹80*",
+      "*CAMPCO Funtan Dark Chocolate*\n\nRich cocoa. Smooth finish. A classic dark chocolate experience for those who like their chocolate a little more intense.\n\n*50 g | ₹80*\n\nLearn more / buy:",
       URLS.funtan,
       "after_product",
+      IMAGES.funtan,
     ),
     productMessage(
       "prod_milk",
-      "Creamy chocolate coming right up!\n\n*CAMPCO Milk Marvel*\n\nSilky, smooth milk chocolate with a rich, creamy taste — perfect for treating yourself, sharing or gifting.\n\n*50 g | ₹80*",
+      "*CAMPCO Milk Marvel*\n\nSilky, smooth milk chocolate with a rich, creamy taste — perfect for treating yourself, sharing or gifting.\n\n*50 g | ₹80*\n\nLearn more / buy:",
       URLS.milkMarvel,
       "after_product",
+      IMAGES.milkMarvel,
     ),
     productMessage(
       "prod_dieter",
-      "Chocolate without added sugar? We’ve got you.\n\n*CAMPCO Dieter Sugar-Free Dark Chocolate*\n\nA rich dark chocolate experience with *no added sugar*, made for chocolate lovers looking for a sugar-free option.\n\n*50 g | ₹80*",
+      "*CAMPCO Dieter Sugar-Free Dark Chocolate*\n\nA rich dark chocolate experience with *no added sugar*, made for chocolate lovers looking for a sugar-free option.\n\n*50 g | ₹80*\n\nLearn more / buy:",
       URLS.dieter,
       "after_product",
+      IMAGES.dieter,
     ),
     productMessage(
       "prod_krunch",
-      "We have something delicious for you! \n\n*CAMPCO Krunch*\n\nRich, smooth and creamy milk chocolate — an easy pick when you just want to enjoy a good chocolate moment.\n\n*50 g | ₹80*",
+      "*CAMPCO Krunch*\n\nRich, smooth and creamy milk chocolate — an easy pick when you just want to enjoy a good chocolate moment.\n\n*50 g | ₹80*\n\nLearn more / buy:",
       URLS.krunch,
       "after_product",
+      IMAGES.krunch,
     ),
 
     buttons("after_product", "Want to keep exploring?", [

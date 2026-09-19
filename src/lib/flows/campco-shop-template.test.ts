@@ -12,6 +12,18 @@ describe("CAMPCO shop template", () => {
     expect(t!.nodes.length).toBeGreaterThan(10);
   });
 
+  it("includes product image URLs from Campco Cart CDN", () => {
+    const products = CAMPCO_SHOP.nodes.filter(
+      (n) => n.node_key.startsWith("prod_") && n.node_type === "send_message",
+    );
+    expect(products.length).toBe(4);
+    for (const n of products) {
+      const cfg = n.config as { image_url?: string; buy_url?: string };
+      expect(cfg.image_url).toMatch(/^https:\/\/cdn\.shopify\.com\//);
+      expect(cfg.buy_url).toMatch(/^https:\/\/campcocart\.com\//);
+    }
+  });
+
   it("passes activation validation", () => {
     const issues = validateFlowForActivation(
       {
