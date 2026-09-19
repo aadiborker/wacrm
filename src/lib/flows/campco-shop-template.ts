@@ -200,13 +200,13 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
     ),
     productMessage(
       "prod_milk",
-      "Creamy chocolate coming right up! \n\n*CAMPCO Milk Marvel*\n\nSilky, smooth milk chocolate with a rich, creamy taste — perfect for treating yourself, sharing or gifting.\n\n*50 g | ₹80*",
+      "Creamy chocolate coming right up!\n\n*CAMPCO Milk Marvel*\n\nSilky, smooth milk chocolate with a rich, creamy taste — perfect for treating yourself, sharing or gifting.\n\n*50 g | ₹80*",
       URLS.milkMarvel,
       "after_product",
     ),
     productMessage(
       "prod_dieter",
-      "Chocolate without added sugar? We’ve got you. \n\n*CAMPCO Dieter Sugar-Free Dark Chocolate*\n\nA rich dark chocolate experience with *no added sugar*, made for chocolate lovers looking for a sugar-free option.\n\n*50 g | ₹80*",
+      "Chocolate without added sugar? We’ve got you.\n\n*CAMPCO Dieter Sugar-Free Dark Chocolate*\n\nA rich dark chocolate experience with *no added sugar*, made for chocolate lovers looking for a sugar-free option.\n\n*50 g | ₹80*",
       URLS.dieter,
       "after_product",
     ),
