@@ -33,17 +33,18 @@ type CampcoFlowTemplate = {
   }>;
 };
 
-/** Replace these URLs in the cloned flow with real CAMPCO Cart links. */
+/** Live Campco Cart links (from campcocart.com products/collections JSON). */
 const URLS = {
-  funtan: "https://campco.in/products/funtan-dark-chocolate",
-  milkMarvel: "https://campco.in/products/milk-marvel",
-  dieter: "https://campco.in/products/dieter-sugar-free-dark",
-  krunch: "https://campco.in/products/krunch",
-  premium: "https://campco.in/collections/premium-chocolates",
-  cooking: "https://campco.in/collections/cooking-chocolates",
-  treats: "https://campco.in/collections/chocolate-treats-gifts",
-  drinking: "https://campco.in/collections/drinking-chocolate",
-  everything: "https://campco.in/collections/all",
+  funtan: "https://campcocart.com/products/campco-funtan-dark-chocolate",
+  milkMarvel: "https://campcocart.com/products/campco-milk-marvel",
+  dieter:
+    "https://campcocart.com/products/campco-dieter-sugar-free-dark-chocolate-copy",
+  krunch: "https://campcocart.com/products/campco-krunch-copy",
+  premium: "https://campcocart.com/collections/premium-chocolate",
+  cooking: "https://campcocart.com/collections/cooking-choclate",
+  treats: "https://campcocart.com/collections/choco-treats",
+  drinking: "https://campcocart.com/collections/drinking-choclate",
+  everything: "https://campcocart.com/collections/all",
 } as const;
 
 function list(
@@ -105,7 +106,7 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
   slug: "campco_shop",
   name: "CAMPCO Chocolates shop",
   description:
-    "Full CAMPCO WhatsApp shop: premium picker, explore categories, order tracking handoff, and support. Triggered by Hi / Hello. Edit buy URLs after cloning.",
+    "Full CAMPCO WhatsApp shop using live campcocart.com product links: premium picker, categories, upsell, order capture, and support. Triggered by Hi / Hello.",
   icon: "MessageSquare",
   trigger_type: "keyword",
   trigger_config: {
