@@ -172,6 +172,25 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
         filename: "",
         next_node_key: "",
       };
+    case "send_carousel":
+      return {
+        text: "",
+        cards: [
+          {
+            image_url: "",
+            body: "Product 1",
+            button_label: "Buy now",
+            button_url: "",
+          },
+          {
+            image_url: "",
+            body: "Product 2",
+            button_label: "Buy now",
+            button_url: "",
+          },
+        ],
+        next_node_key: "",
+      };
     case "collect_input":
       return {
         prompt_text: "",

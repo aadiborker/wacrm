@@ -35,6 +35,7 @@
 import { supabaseAdmin } from "./admin-client";
 import {
   engineSendInteractiveButtons,
+  engineSendInteractiveCarousel,
   engineSendInteractiveList,
   engineSendMedia,
   engineSendText,
@@ -53,6 +54,7 @@ import {
   type FlowRunRow,
   type ParsedInbound,
   type SendButtonsNodeConfig,
+  type SendCarouselNodeConfig,
   type SendListNodeConfig,
   type SendMediaNodeConfig,
   type SendMessageNodeConfig,
@@ -159,6 +161,7 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "start" ||
     node_type === "send_message" ||
     node_type === "send_media" ||
+    node_type === "send_carousel" ||
     node_type === "condition" ||
     node_type === "set_tag"
   );
@@ -751,6 +754,48 @@ async function advanceFromNodeKey(
         return { outcome: "completed" };
       }
       currentKey = cfg.next_node_key;
+      continue;
+    }
+    if (node.node_type === "send_carousel") {
+      const cfg = node.config as unknown as SendCarouselNodeConfig;
+      try {
+        const cards = (cfg.cards ?? []).map((c) => ({
+          imageUrl: interpolateVars(c.image_url ?? "", run.vars).trim(),
+          bodyText: c.body
+            ? interpolateVars(c.body, run.vars).trim()
+            : undefined,
+          displayText: interpolateVars(c.button_label ?? "", run.vars)
+            .trim()
+            .slice(0, 20),
+          url: interpolateVars(c.button_url ?? "", run.vars).trim(),
+        }));
+        const { whatsapp_message_id } = await engineSendInteractiveCarousel({
+          accountId: run.account_id,
+          userId: run.user_id,
+          conversationId: run.conversation_id!,
+          contactId: run.contact_id!,
+          bodyText: interpolateVars(cfg.text ?? "", run.vars).trim(),
+          cards,
+        });
+        await logEvent(db, run.id, "message_sent", node.node_key, {
+          node_type: "send_carousel",
+          card_count: cards.length,
+          whatsapp_message_id,
+        });
+      } catch (err) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "send_carousel_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        await endRun(db, run.id, "failed", "send_carousel_failed");
+        return { outcome: "completed" };
+      }
+      const next = cfg.next_node_key?.trim() ?? "";
+      if (!next) {
+        await endRun(db, run.id, "completed", "send_carousel_leaf");
+        return { outcome: "completed" };
+      }
+      currentKey = next;
       continue;
     }
     if (node.node_type === "collect_input") {

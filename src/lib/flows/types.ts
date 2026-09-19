@@ -122,6 +122,29 @@ export interface SendMediaNodeConfig {
   next_node_key: string;
 }
 
+/**
+ * Horizontally scrollable product cards (image + name + Buy URL).
+ * Use when a list can't show photos — WhatsApp list rows are text-only.
+ * CTA taps open the browser (no webhook reply); the engine auto-advances.
+ */
+export interface SendCarouselNodeConfig {
+  /** Main body above the carousel (≤ 1024 chars). */
+  text: string;
+  /** 2–10 cards. */
+  cards: Array<{
+    /** Public HTTPS product image. */
+    image_url: string;
+    /** Card body under the image — typically the product name (≤ 160). */
+    body?: string;
+    /** URL button label (≤ 20 chars), e.g. "Buy now". */
+    button_label: string;
+    /** HTTPS product / collection URL. */
+    button_url: string;
+  }>;
+  /** Auto-advance after the carousel is sent. */
+  next_node_key: string;
+}
+
 export interface HandoffNodeConfig {
   /** Optional internal note written to flow_run_events.payload.note. */
   note?: string;
@@ -215,6 +238,7 @@ export type FlowNodeConfig =
   | { node_type: "send_buttons"; config: SendButtonsNodeConfig }
   | { node_type: "send_list"; config: SendListNodeConfig }
   | { node_type: "send_media"; config: SendMediaNodeConfig }
+  | { node_type: "send_carousel"; config: SendCarouselNodeConfig }
   | { node_type: "collect_input"; config: CollectInputNodeConfig }
   | { node_type: "condition"; config: ConditionNodeConfig }
   | { node_type: "set_tag"; config: SetTagNodeConfig }

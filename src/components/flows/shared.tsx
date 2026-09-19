@@ -18,6 +18,7 @@
 
 import {
   Flag,
+  GalleryHorizontal,
   GitFork,
   Inbox,
   ListChecks,
@@ -46,6 +47,7 @@ export type NodeType =
   | 'send_buttons'
   | 'send_list'
   | 'send_media'
+  | 'send_carousel'
   | 'collect_input'
   | 'condition'
   | 'set_tag'
@@ -131,6 +133,13 @@ export const NODE_META: Record<
     blurb: 'Sends an image, video, or document',
     category: 'messaging',
   },
+  send_carousel: {
+    label: 'Product carousel',
+    icon: GalleryHorizontal,
+    color: 'text-violet-400',
+    blurb: 'Scrollable image cards with name + Buy link',
+    category: 'messaging',
+  },
   collect_input: {
     label: 'Collect input',
     icon: Inbox,
@@ -202,6 +211,7 @@ const NODE_HUE: Record<NodeType, { l: number; c: number; h: number }> = {
   send_buttons: { l: 0.62, c: 0.16, h: 254 }, // cobalt
   send_list: { l: 0.62, c: 0.15, h: 277 }, // indigo
   send_media: { l: 0.65, c: 0.12, h: 210 }, // sky
+  send_carousel: { l: 0.62, c: 0.16, h: 300 }, // violet — product gallery
   collect_input: { l: 0.65, c: 0.1, h: 185 }, // teal — capture
   condition: { l: 0.72, c: 0.15, h: 65 }, // amber — a fork in the road
   set_tag: { l: 0.65, c: 0.15, h: 350 }, // pink
@@ -388,6 +398,24 @@ export function summarizeNode(
       return caption
         ? `${label}: ${truncate(name, 30)} · ${truncate(caption, 40)}`
         : `${label}: ${truncate(name, 60)}`;
+    }
+    case 'send_carousel': {
+      const text = typeof cfg.text === 'string' ? cfg.text : '';
+      const cards = Array.isArray(cfg.cards)
+        ? (cfg.cards as Array<Record<string, unknown>>)
+        : [];
+      const n = cards.length;
+      const suffix =
+        n > 0
+          ? t
+            ? t('carouselCards', { count: n })
+            : `${n} card${n === 1 ? '' : 's'}`
+          : t
+            ? t('carouselEmpty')
+            : 'no cards';
+      return text.length > 0
+        ? `${truncate(text, 45)} · ${suffix}`
+        : suffix;
     }
     case 'collect_input': {
       const prompt = typeof cfg.prompt_text === 'string' ? cfg.prompt_text : '';

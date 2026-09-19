@@ -453,6 +453,7 @@ function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: Retur
     'send_list',
     'send_message',
     'send_media',
+    'send_carousel',
     'collect_input',
     'condition',
     'set_tag',

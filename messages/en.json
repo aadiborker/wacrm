@@ -1382,6 +1382,13 @@
         "listProductTextLabel": "Product message (sent on tap)",
         "addRow": "Add row",
         "addSection": "Add section",
+        "carouselHelp": "Customers swipe through product photos. Each card shows an image, name, and a Buy now link. WhatsApp lists cannot show images — use this instead for product previews.",
+        "carouselCardsHelp": "Cards (2–10) — image + name + Buy link",
+        "carouselCardN": "Card {n}",
+        "carouselCardNamePlaceholder": "Product name (shown under the image)",
+        "carouselButtonPlaceholder": "Buy now (≤20 chars)",
+        "addCarouselCard": "Add card",
+        "removeCard": "Remove card",
         "ifLabel": "If",
         "capturedVariable": "Captured variable",
         "contactHasTag": "Contact has tag",
@@ -1447,6 +1454,10 @@
           "label": "Send media",
           "blurb": "Sends an image, video, or document"
         },
+        "send_carousel": {
+          "label": "Product carousel",
+          "blurb": "Scrollable image cards with name + Buy link"
+        },
         "collect_input": {
           "label": "Collect input",
           "blurb": "Asks a question, saves the reply"
@@ -1495,6 +1506,8 @@
       "withImage": "image",
       "withBuyLink": "buy link",
       "productsInList": "{count} {count, plural, =1 {product} other {products}}",
+      "carouselCards": "{count} {count, plural, =1 {card} other {cards}}",
+      "carouselEmpty": "no cards",
       "hasTag": "has tag {tag}",
       "opContains": "contains",
       "opExists": "exists",

@@ -120,6 +120,17 @@ export function NodeConfigForm({
         />
       );
 
+    case "send_carousel":
+      return (
+        <SendCarouselForm
+          cfg={cfg as SendCarouselCfg}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
+        />
+      );
+
     case "send_media":
       return (
         <SendMediaForm
@@ -342,6 +353,159 @@ function SendButtonsForm({
           </Button>
         )}
       </div>
+    </>
+  );
+}
+
+// ============================================================
+// send_carousel (image cards + name + Buy URL)
+// ============================================================
+
+interface SendCarouselCfg {
+  text?: string;
+  cards?: Array<{
+    image_url?: string;
+    body?: string;
+    button_label?: string;
+    button_url?: string;
+  }>;
+  next_node_key?: string;
+}
+
+function SendCarouselForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: SendCarouselCfg;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const cards = cfg.cards ?? [];
+  const updateCard = (
+    idx: number,
+    patch: Partial<NonNullable<SendCarouselCfg["cards"]>[number]>,
+  ) => {
+    onUpdateConfig({
+      cards: cards.map((c, i) => (i === idx ? { ...c, ...patch } : c)),
+    });
+  };
+  const addCard = () => {
+    if (cards.length >= 10) return;
+    onUpdateConfig({
+      cards: [
+        ...cards,
+        {
+          image_url: "",
+          body: `Product ${cards.length + 1}`,
+          button_label: "Buy now",
+          button_url: "",
+        },
+      ],
+    });
+  };
+  const removeCard = (idx: number) => {
+    if (cards.length <= 2) return;
+    onUpdateConfig({ cards: cards.filter((_, i) => i !== idx) });
+  };
+
+  return (
+    <>
+      <TextRow
+        label={t("bodyText")}
+        value={cfg.text ?? ""}
+        onChange={(v) => onUpdateConfig({ text: v })}
+        rows={3}
+      />
+      <p className="text-[10px] text-muted-foreground -mt-1">
+        {t("carouselHelp")}
+      </p>
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <label className="text-xs text-muted-foreground">
+            {t("carouselCardsHelp")}
+          </label>
+        </div>
+        <div className="flex flex-col gap-3">
+          {cards.map((card, i) => (
+            <div
+              key={i}
+              className="flex flex-col gap-2 rounded-md border border-border bg-muted/40 p-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("carouselCardN", { n: i + 1 })}
+                </span>
+                {cards.length > 2 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeCard(i)}
+                    aria-label={t("removeCard")}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+              <ListRowImageField
+                imageUrl={card.image_url ?? ""}
+                onChange={(image_url) => updateCard(i, { image_url })}
+                t={t}
+              />
+              <Input
+                value={card.body ?? ""}
+                onChange={(e) => updateCard(i, { body: e.target.value })}
+                placeholder={t("carouselCardNamePlaceholder")}
+                maxLength={160}
+                className="bg-background text-sm"
+              />
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <Input
+                  value={card.button_label ?? ""}
+                  onChange={(e) =>
+                    updateCard(i, { button_label: e.target.value.slice(0, 20) })
+                  }
+                  placeholder={t("carouselButtonPlaceholder")}
+                  maxLength={20}
+                  className="bg-background text-sm"
+                />
+                <Input
+                  value={card.button_url ?? ""}
+                  onChange={(e) =>
+                    updateCard(i, { button_url: e.target.value })
+                  }
+                  placeholder="https://…"
+                  className="bg-background font-mono text-xs"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        {cards.length < 10 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={addCard}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {t("addCarouselCard")}
+          </Button>
+        )}
+      </div>
+      <NextNodeRow
+        value={cfg.next_node_key ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(v) => onUpdateConfig({ next_node_key: v })}
+        label={t("advanceAfterSending")}
+      />
     </>
   );
 }

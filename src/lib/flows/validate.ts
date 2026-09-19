@@ -323,6 +323,114 @@ function validateNode(
       break;
     }
 
+    case "send_carousel": {
+      const cfg = node.config as {
+        text?: string;
+        cards?: Array<{
+          image_url?: string;
+          body?: string;
+          button_label?: string;
+          button_url?: string;
+        }>;
+        next_node_key?: string;
+      };
+      if (!cfg.text?.trim()) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "text",
+          message: "Carousel needs a message body above the cards.",
+        });
+      } else if (cfg.text.length > INTERACTIVE_LIMITS.bodyMaxLength) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "text",
+          message: `Carousel body exceeds ${INTERACTIVE_LIMITS.bodyMaxLength} chars (WhatsApp limit).`,
+        });
+      }
+      const cards = cfg.cards ?? [];
+      if (cards.length < 2 || cards.length > 10) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "cards",
+          message: "Carousel needs 2–10 product cards.",
+        });
+      }
+      cards.forEach((card, i) => {
+        const imageUrl = card.image_url?.trim() ?? "";
+        const label = card.button_label?.trim() ?? "";
+        const url = card.button_url?.trim() ?? "";
+        const body = card.body?.trim() ?? "";
+        if (!imageUrl || !isHttpsUrl(imageUrl)) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: `cards[${i}].image_url`,
+            message: `Card ${i + 1} needs an https:// image URL.`,
+          });
+        }
+        if (!label) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: `cards[${i}].button_label`,
+            message: `Card ${i + 1} needs a button label.`,
+          });
+        } else if (label.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: `cards[${i}].button_label`,
+            message: `Card ${i + 1} button label exceeds ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars.`,
+          });
+        }
+        if (!url || !isHttpsUrl(url)) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: `cards[${i}].button_url`,
+            message: `Card ${i + 1} needs an https:// buy link.`,
+          });
+        }
+        if (body.length > 160) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: `cards[${i}].body`,
+            message: `Card ${i + 1} name/body exceeds 160 chars.`,
+          });
+        }
+      });
+      if (!cfg.next_node_key) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: "Carousel must point to a next node.",
+        });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: `Carousel points to non-existent node "${cfg.next_node_key}".`,
+        });
+      }
+      break;
+    }
+
     case "send_buttons": {
       const cfg = node.config as {
         text?: string;
@@ -801,6 +909,7 @@ function outgoingEdges(node: NodeInput): string[] {
     case "start":
     case "send_message":
     case "send_media":
+    case "send_carousel":
     case "collect_input":
     case "set_tag": {
       const cfg = node.config as { next_node_key?: string };

@@ -997,6 +997,244 @@ export async function sendInteractiveList(
   return { messageId: data.messages[0].id }
 }
 
+export interface SendInteractiveCtaUrlArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  /** Body text under the image (≤ 1024 chars). */
+  bodyText: string
+  /** Button label (≤ 20 chars), e.g. "Learn More". */
+  displayText: string
+  /** HTTPS URL opened when the customer taps the button. */
+  url: string
+  /** Optional image header (public HTTPS URL Meta fetches). */
+  imageUrl?: string
+  /** Optional text header when no image (≤ 60 chars). */
+  headerText?: string
+  footerText?: string
+  contextMessageId?: string
+}
+
+/**
+ * Interactive CTA URL card — image (optional) + body + single “Learn More”
+ * button that opens a URL. Matches the product-card look WhatsApp shows
+ * for call-to-action messages. Tapping does not send a webhook reply
+ * (customer leaves to the browser); flows should auto-advance after send.
+ *
+ * https://developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-cta-url-messages
+ */
+export async function sendInteractiveCtaUrl(
+  args: SendInteractiveCtaUrlArgs,
+): Promise<MetaSendResult> {
+  const {
+    phoneNumberId,
+    accessToken,
+    to,
+    bodyText,
+    displayText,
+    url,
+    imageUrl,
+    headerText,
+    footerText,
+    contextMessageId,
+  } = args
+
+  validateInteractiveBody(bodyText)
+  if (footerText && footerText.length > INTERACTIVE_LIMITS.footerMaxLength) {
+    throw new Error(
+      `Interactive footerText exceeds ${INTERACTIVE_LIMITS.footerMaxLength} chars.`,
+    )
+  }
+  const label = (displayText || "").trim()
+  if (!label) throw new Error("CTA URL requires displayText.")
+  if (label.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
+    throw new Error(
+      `CTA displayText "${label}" exceeds ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars.`,
+    )
+  }
+  const href = (url || "").trim()
+  if (!href.startsWith("https://")) {
+    throw new Error("CTA URL must be an https:// link.")
+  }
+  if (imageUrl && !imageUrl.trim().startsWith("https://")) {
+    throw new Error("CTA image URL must be an https:// link.")
+  }
+  if (
+    !imageUrl &&
+    headerText &&
+    headerText.length > INTERACTIVE_LIMITS.headerTextMaxLength
+  ) {
+    throw new Error(
+      `Interactive headerText exceeds ${INTERACTIVE_LIMITS.headerTextMaxLength} chars.`,
+    )
+  }
+
+  const interactive: Record<string, unknown> = {
+    type: "cta_url",
+    body: { text: bodyText },
+    action: {
+      name: "cta_url",
+      parameters: {
+        display_text: label,
+        url: href,
+      },
+    },
+  }
+  if (imageUrl?.trim()) {
+    interactive.header = {
+      type: "image",
+      image: { link: imageUrl.trim() },
+    }
+  } else if (headerText?.trim()) {
+    interactive.header = { type: "text", text: headerText.trim() }
+  }
+  if (footerText?.trim()) {
+    interactive.footer = { text: footerText.trim() }
+  }
+
+  const body: Record<string, unknown> = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "interactive",
+    interactive,
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+
+  const apiUrl = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
+export interface CarouselCard {
+  /** Public HTTPS image URL for the card header. */
+  imageUrl: string
+  /** Optional card body (≤ 160 chars). */
+  bodyText?: string
+  /** URL button label (≤ 20 chars). */
+  displayText: string
+  /** HTTPS URL opened by the card button. */
+  url: string
+}
+
+export interface SendInteractiveCarouselArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  /** Main message body above the carousel (≤ 1024 chars). */
+  bodyText: string
+  /** 2–10 cards; all use URL buttons. */
+  cards: CarouselCard[]
+  contextMessageId?: string
+}
+
+/**
+ * Interactive media carousel — horizontally scrollable image cards with
+ * a Buy / Learn More URL button on each. Use this when a list can't show
+ * product photos (WhatsApp list rows are text-only).
+ *
+ * https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/interactive-media-carousel-messages/
+ */
+export async function sendInteractiveCarousel(
+  args: SendInteractiveCarouselArgs,
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, bodyText, cards, contextMessageId } =
+    args
+
+  validateInteractiveBody(bodyText)
+  if (!Array.isArray(cards) || cards.length < 2 || cards.length > 10) {
+    throw new Error('Carousel requires 2–10 cards.')
+  }
+
+  const builtCards = cards.map((card, index) => {
+    const imageUrl = (card.imageUrl || '').trim()
+    const displayText = (card.displayText || '').trim()
+    const url = (card.url || '').trim()
+    const cardBody = (card.bodyText || '').trim()
+
+    if (!imageUrl.startsWith('https://')) {
+      throw new Error(`Carousel card ${index + 1} needs an https:// image URL.`)
+    }
+    if (!displayText) {
+      throw new Error(`Carousel card ${index + 1} needs a button label.`)
+    }
+    if (displayText.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
+      throw new Error(
+        `Carousel card ${index + 1} button label exceeds ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars.`,
+      )
+    }
+    if (!url.startsWith('https://')) {
+      throw new Error(`Carousel card ${index + 1} needs an https:// button URL.`)
+    }
+    if (cardBody.length > 160) {
+      throw new Error(
+        `Carousel card ${index + 1} body exceeds 160 characters.`,
+      )
+    }
+
+    const cardObj: Record<string, unknown> = {
+      card_index: index,
+      type: 'cta_url',
+      header: {
+        type: 'image',
+        image: { link: imageUrl },
+      },
+      action: {
+        name: 'cta_url',
+        parameters: {
+          display_text: displayText,
+          url,
+        },
+      },
+    }
+    if (cardBody) {
+      cardObj.body = { text: cardBody }
+    }
+    return cardObj
+  })
+
+  const interactive: Record<string, unknown> = {
+    type: 'carousel',
+    body: { text: bodyText },
+    action: { cards: builtCards },
+  }
+
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive,
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+
+  const apiUrl = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
 function validateInteractiveBody(bodyText: string): void {
   if (!bodyText) throw new Error('Interactive message requires bodyText.')
   if (bodyText.length > INTERACTIVE_LIMITS.bodyMaxLength) {

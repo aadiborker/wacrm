@@ -87,6 +87,7 @@ describe("defaultConfigFor", () => {
     "send_buttons",
     "send_list",
     "send_media",
+    "send_carousel",
     "collect_input",
     "condition",
     "set_tag",

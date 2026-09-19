@@ -187,10 +187,11 @@ describe("shouldRestartOnKeyword", () => {
 });
 
 describe("node classification helpers", () => {
-  it("isAutoAdvancing covers start + send_message + send_media + condition + set_tag", () => {
+  it("isAutoAdvancing covers start + send_message + send_media + send_carousel + condition + set_tag", () => {
     expect(isAutoAdvancing("start")).toBe(true);
     expect(isAutoAdvancing("send_message")).toBe(true);
     expect(isAutoAdvancing("send_media")).toBe(true);
+    expect(isAutoAdvancing("send_carousel")).toBe(true);
     expect(isAutoAdvancing("condition")).toBe(true);
     expect(isAutoAdvancing("set_tag")).toBe(true);
     expect(isAutoAdvancing("send_buttons")).toBe(false);
@@ -227,6 +228,7 @@ describe("node classification helpers", () => {
       "send_buttons",
       "send_list",
       "send_media",
+      "send_carousel",
       "collect_input",
       "condition",
       "set_tag",

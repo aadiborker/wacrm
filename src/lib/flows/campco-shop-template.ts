@@ -13,6 +13,7 @@ import type {
   CollectInputNodeConfig,
   HandoffNodeConfig,
   SendButtonsNodeConfig,
+  SendCarouselNodeConfig,
   SendListNodeConfig,
   SendMessageNodeConfig,
 } from "./types";
@@ -307,39 +308,41 @@ export const CAMPCO_SHOP: CampcoFlowTemplate = {
       ],
     ),
 
-    // ── 5. Premium quick picks ────────────────────────────────
-    list(
-      "premium_picks",
-      "Here are a few CAMPCO favourites.\n\nSelect a chocolate to get its purchase link:",
-      "Pick chocolate",
-      "Premium picks",
-      [
-        {
-          reply_id: "pick_funtan",
-          title: "Funtan Dark",
-          description: "Bold cocoa flavour",
-          next_node_key: "prod_funtan",
-        },
-        {
-          reply_id: "pick_milk",
-          title: "Milk Marvel",
-          description: "Smooth & creamy",
-          next_node_key: "prod_milk",
-        },
-        {
-          reply_id: "pick_dieter",
-          title: "Dieter Sugar-Free",
-          description: "No added sugar",
-          next_node_key: "prod_dieter",
-        },
-        {
-          reply_id: "pick_krunch",
-          title: "Krunch",
-          description: "Anytime milk treat",
-          next_node_key: "prod_krunch",
-        },
-      ],
-    ),
+    // ── 5. Premium quick picks (image carousel — list rows can't show photos)
+    {
+      node_key: "premium_picks",
+      node_type: "send_carousel",
+      config: {
+        text: "Here are a few CAMPCO favourites.\n\nSwipe to preview each chocolate, then tap Buy now:",
+        cards: [
+          {
+            image_url: IMAGES.funtan,
+            body: "CAMPCO Funtan Dark Chocolate\n50 g | ₹80",
+            button_label: "Buy now",
+            button_url: URLS.funtan,
+          },
+          {
+            image_url: IMAGES.milkMarvel,
+            body: "CAMPCO Milk Marvel\n50 g | ₹80",
+            button_label: "Buy now",
+            button_url: URLS.milkMarvel,
+          },
+          {
+            image_url: IMAGES.dieter,
+            body: "CAMPCO Dieter Sugar-Free Dark\n50 g | ₹80",
+            button_label: "Buy now",
+            button_url: URLS.dieter,
+          },
+          {
+            image_url: IMAGES.krunch,
+            body: "CAMPCO Krunch\n50 g | ₹80",
+            button_label: "Buy now",
+            button_url: URLS.krunch,
+          },
+        ],
+        next_node_key: "after_category",
+      } as SendCarouselNodeConfig,
+    },
 
     productMessage(
       "link_cooking",

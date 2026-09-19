@@ -803,6 +803,7 @@ const ADD_NODE_TYPES: NodeType[] = [
   'send_list',
   'send_message',
   'send_media',
+  'send_carousel',
   'collect_input',
   'condition',
   'set_tag',
