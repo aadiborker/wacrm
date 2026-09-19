@@ -664,7 +664,7 @@ function SendListForm({
                     onChange={(v) =>
                       updateRow(sIdx, rIdx, { next_node_key: v ?? "" })
                     }
-                    placeholder={t("nextNodePlaceholder")}
+                    placeholder={t("nextNodeOptionalPlaceholder")}
                   />
                   <Button
                     variant="ghost"
@@ -1180,8 +1180,11 @@ function SendMessageForm({
         allNodes={allNodes}
         currentKey={currentKey}
         onChange={(v) => onUpdateConfig({ next_node_key: v })}
-        label={t("advancesTo")}
+        label={t("advancesToOptional")}
       />
+      <p className="text-muted-foreground -mt-1 text-xs">
+        {t("nextNodeOptionalHint")}
+      </p>
     </>
   );
 }

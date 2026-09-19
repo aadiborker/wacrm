@@ -40,8 +40,9 @@ export interface SendMessageNodeConfig {
    * in the text bubble (session messages have no CTA URL buttons).
    */
   buy_url?: string;
-  /** Auto-advance target after the message lands at Meta. */
-  next_node_key: string;
+  /** Auto-advance target after the message lands at Meta.
+   *  Empty/omitted = end the run (product leaf). */
+  next_node_key?: string;
 }
 
 export interface SendButtonsNodeConfig {

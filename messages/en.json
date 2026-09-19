@@ -1343,6 +1343,8 @@
       "noNodeDesc": "Select a node on the canvas to edit its configuration.",
       "form": {
         "advancesTo": "Advances to",
+        "advancesToOptional": "Advances to (optional — leave empty to end after this message)",
+        "nextNodeOptionalHint": "Leave as None to end the conversation after this product message.",
         "textToCustomer": "Product / message text",
         "productExtrasHint": "Optional: add a product photo and/or ecommerce buy link. Customers tap the link in WhatsApp to open your store.",
         "productImageLabel": "Product image (optional)",
@@ -1368,6 +1370,7 @@
         "buttonsHelp": "Buttons (1–3) — each one routes to a different next node",
         "optionTitlePlaceholder": "Visible title (≤20 chars)",
         "nextNodePlaceholder": "Next node…",
+        "nextNodeOptionalPlaceholder": "Next node (or None to end)…",
         "addButton": "Add button",
         "buttonLabel": "Tap-to-expand button label (≤20 chars)",
         "rowsHelp": "Rows (1–10 total across all sections)",

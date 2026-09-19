@@ -251,13 +251,7 @@ function validateNode(
         });
       }
       if (!cfg.next_node_key) {
-        issues.push({
-          severity: "error",
-          scope: "node",
-          node_key: node.node_key,
-          field: "next_node_key",
-          message: "Send-message node must point to a next node.",
-        });
+        // Allowed — product / message leaves end the run after sending.
       } else if (!knownKeys.has(cfg.next_node_key)) {
         issues.push({
           severity: "error",
@@ -450,7 +444,7 @@ function validateNode(
           scope: "node",
           node_key: node.node_key,
           field: "text",
-          message: "Send-list node needs a text body.",
+          message: "Send-list needs a text body (the message shown above the product list).",
         });
       }
       if (!cfg.button_label?.trim()) {
@@ -562,13 +556,7 @@ function validateNode(
             });
           }
           if (!row.next_node_key) {
-            issues.push({
-              severity: "error",
-              scope: "node",
-              node_key: node.node_key,
-              field: `${field}.next_node_key`,
-              message: `Row ${ri + 1} needs a next node.`,
-            });
+            // Allowed — after the row's product reply the run can end.
           } else if (!knownKeys.has(row.next_node_key)) {
             issues.push({
               severity: "error",

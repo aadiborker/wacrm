@@ -700,7 +700,12 @@ async function advanceFromNodeKey(
         logNodeType: "send_message",
       });
       if (!ok) return { outcome: "completed" };
-      currentKey = cfg.next_node_key;
+      const next = cfg.next_node_key?.trim() ?? "";
+      if (!next) {
+        await endRun(db, run.id, "completed", "send_message_leaf");
+        return { outcome: "completed" };
+      }
+      currentKey = next;
       continue;
     }
     if (node.node_type === "send_media") {
@@ -1066,7 +1071,10 @@ async function handleReplyForActiveRun(
   //   2. Text reply on a collect_input node — capture into vars.
   //
   // Everything else falls through to the fallback policy below.
-  let matched: string | null = null;
+  // `advanceTo === null` means "end the run after optional product send"
+  // (leaf list rows / product replies with no next node).
+  let hit = false;
+  let advanceTo: string | null = null;
   let listRow: ListRowMatch | null = null;
   if (
     message.kind === "interactive_reply" &&
@@ -1075,9 +1083,17 @@ async function handleReplyForActiveRun(
   ) {
     if (currentNode.node_type === "send_list") {
       listRow = findListRow(currentNode, message.reply_id);
-      matched = listRow?.next_node_key ?? null;
+      if (listRow) {
+        hit = true;
+        const next = listRow.next_node_key?.trim() ?? "";
+        advanceTo = next || null;
+      }
     } else {
-      matched = matchReplyId(currentNode, message.reply_id);
+      const next = matchReplyId(currentNode, message.reply_id);
+      if (next) {
+        hit = true;
+        advanceTo = next;
+      }
     }
   } else if (
     message.kind === "text" &&
@@ -1105,12 +1121,14 @@ async function handleReplyForActiveRun(
           captured_key: cfg.var_key,
           captured_length: captured.length,
         });
-        matched = cfg.next_node_key;
+        hit = true;
+        const next = cfg.next_node_key?.trim() ?? "";
+        advanceTo = next || null;
       }
     }
   }
 
-  if (matched) {
+  if (hit) {
     // Reset reprompt count on a successful match. Skip the write when
     // already 0 — the collect_input capture branch above already
     // zeroed it, and interactive-reply matches against a fresh run
@@ -1141,7 +1159,12 @@ async function handleReplyForActiveRun(
       }
     }
 
-    const outcome = await advanceFromNodeKey(db, run, matched, nodes);
+    if (!advanceTo) {
+      await endRun(db, run.id, "completed", "list_row_leaf");
+      return { consumed: true, flow_run_id: run.id, outcome: "completed" };
+    }
+
+    const outcome = await advanceFromNodeKey(db, run, advanceTo, nodes);
     return {
       consumed: true,
       flow_run_id: run.id,
