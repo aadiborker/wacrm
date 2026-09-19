@@ -347,7 +347,10 @@ function EventLine({ ev }: { ev: EventRow }) {
 function summarizePayload(payload: Record<string, unknown>): string {
   // Show the keys that matter most to a human debugger; full JSON is
   // available via the "Captured vars" details panel for the run.
-  const keys = ["reply_id", "captured_key", "reason", "advancing_to"];
+  if (typeof payload.detail === "string" && payload.detail.trim()) {
+    return payload.detail.slice(0, 160);
+  }
+  const keys = ["reply_id", "captured_key", "reason", "advancing_to", "node_type"];
   for (const k of keys) {
     if (k in payload && payload[k] !== null && payload[k] !== undefined) {
       return `${k}=${String(payload[k]).slice(0, 80)}`;

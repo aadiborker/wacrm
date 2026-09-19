@@ -445,17 +445,24 @@ async function sendInteractiveViaMeta(
     status: 'sent',
   })
   if (msgErr) {
-    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
+    // Customer already received the WhatsApp message — don't fail the
+    // flow run over an inbox-persist glitch (e.g. missing conversation).
+    console.error(
+      '[flows] interactive sent to Meta but DB insert failed:',
+      msgErr.message,
+    )
   }
 
-  await db
-    .from('conversations')
-    .update({
-      last_message_text: input.bodyText,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', input.conversationId)
+  if (input.conversationId) {
+    await db
+      .from('conversations')
+      .update({
+        last_message_text: input.bodyText,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', input.conversationId)
+  }
 
   return { whatsapp_message_id: waMessageId }
 }

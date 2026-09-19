@@ -438,23 +438,35 @@ async function sendListAndSuspend(
   node: FlowNodeRow,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendListNodeConfig;
+  const sections = (cfg.sections ?? []).map((s) => ({
+    title: s.title?.trim() || undefined,
+    rows: (s.rows ?? []).map((r) => ({
+      id: (r.reply_id || "").trim(),
+      title: (r.title || "").trim().slice(0, 24),
+      description: r.description?.trim()
+        ? r.description.trim().slice(0, 72)
+        : undefined,
+    })),
+  }));
+  const buttonLabel = (cfg.button_label || "").trim() || "Options";
+  const bodyText = (cfg.text || "").trim();
+  if (!bodyText) {
+    throw new Error("Send-list is missing body text (required by WhatsApp).");
+  }
+  if (sections.every((s) => s.rows.length === 0)) {
+    throw new Error("Send-list has no rows to show.");
+  }
+
   const { whatsapp_message_id } = await engineSendInteractiveList({
     accountId: run.account_id,
     userId: run.user_id,
     conversationId: run.conversation_id!,
     contactId: run.contact_id!,
-    bodyText: cfg.text,
-    buttonLabel: cfg.button_label,
+    bodyText,
+    buttonLabel: buttonLabel.slice(0, 20),
     headerText: cfg.header_text,
     footerText: cfg.footer_text,
-    sections: cfg.sections.map((s) => ({
-      title: s.title,
-      rows: s.rows.map((r) => ({
-        id: r.reply_id,
-        title: r.title,
-        description: r.description,
-      })),
-    })),
+    sections,
   });
   await logEvent(db, run.id, "message_sent", node.node_key, {
     node_type: "send_list",
@@ -843,7 +855,16 @@ async function advanceFromNodeKey(
       continue;
     }
     if (node.node_type === "send_buttons") {
-      await sendButtonsAndSuspend(db, run, node);
+      try {
+        await sendButtonsAndSuspend(db, run, node);
+      } catch (err) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "send_buttons_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        await endRun(db, run.id, "failed", "send_buttons_failed");
+        return { outcome: "completed" };
+      }
       // Persist the new current_node_key via optimistic UPDATE.
       const advanced = await advanceCurrentNodeKey(
         db,
@@ -859,7 +880,16 @@ async function advanceFromNodeKey(
       return { outcome: "advanced" };
     }
     if (node.node_type === "send_list") {
-      await sendListAndSuspend(db, run, node);
+      try {
+        await sendListAndSuspend(db, run, node);
+      } catch (err) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "send_list_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        await endRun(db, run.id, "failed", "send_list_failed");
+        return { outcome: "completed" };
+      }
       const advanced = await advanceCurrentNodeKey(
         db,
         run.id,
@@ -1296,10 +1326,26 @@ async function startNewRun(
   }
 
   // Run the advance loop starting from the entry node.
-  const outcome = await advanceFromNodeKey(db, run, flow.entry_node_id!, nodes);
-  return {
-    consumed: true,
-    flow_run_id: run.id,
-    outcome: outcome.outcome === "advanced" ? "started" : outcome.outcome,
-  };
+  try {
+    const outcome = await advanceFromNodeKey(
+      db,
+      run,
+      flow.entry_node_id!,
+      nodes,
+    );
+    return {
+      consumed: true,
+      flow_run_id: run.id,
+      outcome: outcome.outcome === "advanced" ? "started" : outcome.outcome,
+    };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[flows] startNewRun advance failed:", detail);
+    await logEvent(db, run.id, "error", flow.entry_node_id, {
+      reason: "start_advance_failed",
+      detail,
+    });
+    await endRun(db, run.id, "failed", "start_advance_failed");
+    return { consumed: true, flow_run_id: run.id, outcome: "completed" };
+  }
 }
